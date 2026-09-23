@@ -52,16 +52,23 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>launcher</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSArchitecturePriority</key>
+  <array><string>arm64</string><string>x86_64</string></array>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>
 PLIST
 
 # Apps abertos pelo Finder não herdam o PATH do terminal: incluímos o Homebrew (ffmpeg).
+# Um executável em shell script pode ser aberto pelo macOS via Rosetta (Intel) em Macs
+# Apple Silicon; forçamos arm64 para que as bibliotecas nativas (av, ctranslate2) carreguem.
 cat > "$APP/Contents/MacOS/launcher" <<LAUNCHER
 #!/bin/bash
 export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
 LOG="\$HOME/Library/Logs/VideoTranscriber.log"
+if [[ "\$(sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+  exec /usr/bin/arch -arm64 "$PYTHON" -m video_transcriber.gui >>"\$LOG" 2>&1
+fi
 exec "$PYTHON" -m video_transcriber.gui >>"\$LOG" 2>&1
 LAUNCHER
 chmod +x "$APP/Contents/MacOS/launcher"

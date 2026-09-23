@@ -80,7 +80,7 @@ def test_download_progress_and_errors(api: gui.Api, monkeypatch) -> None:
     state = wait_until_finished(api)
 
     assert state["status"] == "error"
-    assert state["error"] == "Private video"
+    assert state["error"] == "Esse vídeo é privado."
     # Depois de um erro, é possível começar de novo.
     assert api.start("https://youtu.be/y")["ok"] is True
     wait_until_finished(api)
@@ -105,3 +105,22 @@ def test_model_is_cached(api: gui.Api, monkeypatch, tmp_path: Path, fake_model) 
 def test_web_assets_exist() -> None:
     assert (gui.WEB_DIR / "index.html").is_file()
     assert (gui.WEB_DIR / "icon.png").is_file()
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (OSError("dlopen(...): incompatible architecture (have 'arm64')"), "modo Intel"),
+        (downloader.DownloadError("[TikTok] 123: Unsupported URL: x"), "não é de um site"),
+        (ValueError(""), "ValueError"),
+    ],
+)
+def test_friendly_error(raw: Exception, expected: str) -> None:
+    assert expected in gui.friendly_error(raw)
+
+
+def test_friendly_error_truncates_long_messages() -> None:
+    message = gui.friendly_error(RuntimeError("x" * 1000 + "\nsegunda linha"))
+    assert len(message) < gui.MAX_ERROR_LENGTH + len(gui.LOG_HINT) + 5
+    assert "segunda linha" not in message
+    assert gui.LOG_HINT in message

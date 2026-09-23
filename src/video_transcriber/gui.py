@@ -81,6 +81,34 @@ def copy_to_clipboard(text: str) -> bool:
     return True
 
 
+KNOWN_ERRORS = {
+    "incompatible architecture": (
+        "O app foi aberto no modo Intel (Rosetta). Recrie o app com "
+        "./scripts/criar_app_macos.sh e abra de novo."
+    ),
+    "Unsupported URL": "Esse link não é de um site suportado.",
+    "Private video": "Esse vídeo é privado.",
+    "Video unavailable": "Esse vídeo não está disponível.",
+    "Sign in to confirm": "A plataforma pediu login para liberar esse vídeo.",
+    "HTTP Error 404": "Vídeo não encontrado (erro 404). Confira o link.",
+    "Unable to download": "Não foi possível baixar o vídeo. Confira o link e a internet.",
+}
+MAX_ERROR_LENGTH = 220
+LOG_HINT = "Detalhes em ~/Library/Logs/VideoTranscriber.log"
+
+
+def friendly_error(exc: BaseException) -> str:
+    """Resume uma exceção em uma mensagem curta para a interface."""
+    raw = str(exc).removeprefix("ERROR: ").strip() or type(exc).__name__
+    for pattern, message in KNOWN_ERRORS.items():
+        if pattern.lower() in raw.lower():
+            return message
+    first_line = raw.splitlines()[0]
+    if len(first_line) > MAX_ERROR_LENGTH:
+        first_line = first_line[: MAX_ERROR_LENGTH - 1].rstrip() + "…"
+    return f"{first_line} ({LOG_HINT})"
+
+
 class Api:
     """Métodos expostos ao JavaScript como `window.pywebview.api.*`.
 
@@ -198,7 +226,7 @@ class Api:
             )
         except Exception as exc:  # noqa: BLE001 - qualquer erro vira mensagem na tela
             logger.exception("Falha ao transcrever %s", entrada)
-            self._update(status="error", error=str(exc).removeprefix("ERROR: "), stage="")
+            self._update(status="error", error=friendly_error(exc), stage="")
             return
         self._update(
             status="done",
