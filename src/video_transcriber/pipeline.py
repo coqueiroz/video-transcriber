@@ -23,7 +23,13 @@ class JobResult:
 
     title: str
     transcription: transcriber.Transcription
+    origin: str = ""
     outputs: list[Path] = field(default_factory=list)
+
+    @property
+    def metadata(self) -> dict[str, str]:
+        """Metadados gravados no JSON de saída."""
+        return {"titulo": self.title, "origem": self.origin}
 
 
 def resolve_source(
@@ -50,15 +56,19 @@ def run_job(
     item: str,
     model: Any,
     *,
-    output_dir: Path,
-    formats: list[str],
+    output_dir: Path | None = None,
+    formats: list[str] | None = None,
     language: str | None = None,
     keep: bool = False,
     download_hook: downloader.ProgressHook | None = None,
     on_source: Any = None,
     on_progress: transcriber.ProgressCallback | None = None,
 ) -> JobResult:
-    """Baixa (se necessário), transcreve e grava as saídas de uma entrada."""
+    """Baixa (se necessário) e transcreve uma entrada.
+
+    Só grava arquivos quando `output_dir` e `formats` são informados; caso contrário,
+    nada é salvo em disco além do áudio temporário, que é apagado ao final.
+    """
     with tempfile.TemporaryDirectory(prefix="video-transcriber-") as tmp:
         source = resolve_source(item, Path(tmp), download_hook)
         if on_source:
@@ -70,8 +80,11 @@ def run_job(
         if not result.segments:
             logger.warning("Nenhuma fala detectada em %s", item)
 
-        metadata = {"titulo": source.title, "origem": source.origin}
-        outputs = formatters.write_outputs(result, output_dir, source.title, formats, metadata)
-        if keep and source.is_temporary:
-            outputs.append(keep_audio(source, output_dir))
-    return JobResult(title=source.title, transcription=result, outputs=outputs)
+        job = JobResult(title=source.title, transcription=result, origin=source.origin)
+        if output_dir is not None and formats:
+            job.outputs = formatters.write_outputs(
+                result, output_dir, source.title, formats, job.metadata
+            )
+            if keep and source.is_temporary:
+                job.outputs.append(keep_audio(source, output_dir))
+    return job

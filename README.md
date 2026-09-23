@@ -60,8 +60,10 @@ Pronto: o comando `transcrever` fica disponível enquanto o ambiente virtual est
 
 Prefere não usar o terminal? O projeto inclui uma janela simples: cole o link, clique em
 **Transcrever**, acompanhe a porcentagem e leia (ou copie) o texto quando chegar a 100%.
-Também dá para escolher um arquivo do computador. As transcrições são salvas em
-`~/Documents/Transcricoes` (em .txt, .srt e .json).
+Também dá para escolher um arquivo do computador.
+
+A janela **não salva nada automaticamente**: a transcrição aparece só na tela. Se quiser
+guardá-la, use **Salvar…** e escolha o formato (.txt, .srt ou .json) e onde gravar.
 
 ```bash
 pip install -e ".[app]"

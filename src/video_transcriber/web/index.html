@@ -168,7 +168,7 @@
   .seg { display: flex; gap: 12px; }
   .seg time { color: var(--accent); font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 2px; flex-shrink: 0; }
   .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
-  .saved { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .ctx-menu small { opacity: .55; }
 
   .error {
     background: var(--danger-soft); color: var(--danger);
@@ -291,21 +291,25 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         Copiar texto
       </button>
-      <button id="folder" class="ghost" type="button">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        Abrir pasta
+      <button id="save" class="ghost" type="button" aria-haspopup="menu">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Salvar…
       </button>
       <button id="new" class="ghost" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         Nova transcrição
       </button>
     </div>
-    <p id="saved" class="saved"></p>
   </section>
 
-  <footer>Tudo roda no seu computador. Use apenas para fins pessoais e respeite os direitos dos criadores.</footer>
+  <footer>Tudo roda no seu computador e nada é salvo sem você pedir. Use apenas para fins pessoais e respeite os direitos dos criadores.</footer>
 </main>
 <div id="toast" class="toast"></div>
+<div id="save-menu" class="ctx-menu hidden" role="menu">
+  <button data-format="txt" type="button">Texto <small>.txt</small></button>
+  <button data-format="srt" type="button">Legenda <small>.srt</small></button>
+  <button data-format="json" type="button">Dados com tempos <small>.json</small></button>
+</div>
 <div id="ctx" class="ctx-menu hidden" role="menu">
   <button data-action="cut" type="button">Recortar <kbd>⌘X</kbd></button>
   <button data-action="copy" type="button">Copiar <kbd>⌘C</kbd></button>
@@ -399,8 +403,6 @@
     current = state.result;
     const lang = LANGS[current.language] || current.language;
     $("meta").textContent = `${current.title} · ${lang} · ${fmtTime(current.duration)}`;
-    const folder = state.outputs.length ? state.outputs[0].replace(/[/\\][^/\\]*$/, "") : "";
-    $("saved").textContent = folder ? `Salvo em ${folder} (.txt, .srt e .json)` : "";
     renderTranscript();
     show($("result"), true);
     $("result").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -465,7 +467,28 @@
   $("tab-text").addEventListener("click", () => setView("text"));
   $("tab-times").addEventListener("click", () => setView("times"));
   $("copy").addEventListener("click", copy);
-  $("folder").addEventListener("click", () => api.open_output_dir());
+  // --- Salvar (só quando o usuário pede) ---------------------------------------
+  const saveMenu = $("save-menu");
+  $("save").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!saveMenu.classList.contains("hidden")) { show(saveMenu, false); return; }
+    const r = $("save").getBoundingClientRect();
+    show(saveMenu, true);
+    saveMenu.style.left = r.left + "px";
+    saveMenu.style.top = Math.min(r.bottom + 6, window.innerHeight - saveMenu.offsetHeight - 8) + "px";
+  });
+  saveMenu.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    show(saveMenu, false);
+    const res = await api.save(btn.dataset.format);
+    if (res.ok) toast("Arquivo salvo!");
+    else if (!res.cancelled) toast(res.error || "Não foi possível salvar");
+  });
+  document.addEventListener("click", (e) => {
+    if (!saveMenu.contains(e.target) && e.target !== $("save")) show(saveMenu, false);
+  });
+  window.addEventListener("scroll", () => show(saveMenu, false), true);
   $("new").addEventListener("click", reset);
 
   // --- Colar e menu do botão direito (o pywebview remove o menu nativo) ---------

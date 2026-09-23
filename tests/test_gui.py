@@ -14,7 +14,7 @@ from video_transcriber import downloader, gui, transcriber
 def api(monkeypatch, tmp_path, fake_model) -> gui.Api:
     monkeypatch.setattr(transcriber, "load_model", lambda name, device: fake_model)
     monkeypatch.setattr(downloader, "ffmpeg_available", lambda: True)
-    return gui.Api(output_dir=tmp_path / "out")
+    return gui.Api()
 
 
 def wait_until_finished(api: gui.Api, timeout: float = 5.0) -> dict:
@@ -49,7 +49,29 @@ def test_start_requires_ffmpeg_for_links(api: gui.Api, monkeypatch) -> None:
     assert "ffmpeg" in result["error"]
 
 
-def test_local_file_end_to_end(api: gui.Api, tmp_path: Path, fake_model) -> None:
+class FakeWindow:
+    """Imita a janela do pywebview, respondendo ao diálogo "Salvar como"."""
+
+    def __init__(self, answer):
+        self.answer = answer
+        self.dialogs: list[dict] = []
+
+    def create_file_dialog(self, dialog_type, **kwargs):
+        self.dialogs.append(kwargs)
+        return self.answer
+
+
+def transcribe_local(api: gui.Api, tmp_path: Path, name: str = "entrevista.wav") -> dict:
+    audio = tmp_path / name
+    audio.write_bytes(b"x")
+    assert api.start(str(audio), idioma="pt", modelo="base") == {"ok": True}
+    return wait_until_finished(api)
+
+
+def test_local_file_end_to_end_saves_nothing(
+    api: gui.Api, tmp_path: Path, fake_model, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
     audio = tmp_path / "entrevista.wav"
     audio.write_bytes(b"x")
 
@@ -61,12 +83,9 @@ def test_local_file_end_to_end(api: gui.Api, tmp_path: Path, fake_model) -> None
     assert state["result"]["title"] == "entrevista"
     assert state["result"]["text"] == "Olá.\nTudo bem?"
     assert state["result"]["segments"][1] == {"start": 1.0, "end": 2.0, "text": "Tudo bem?"}
-    assert sorted(Path(p).name for p in state["outputs"]) == [
-        "entrevista.json",
-        "entrevista.srt",
-        "entrevista.txt",
-    ]
     assert fake_model.calls[0]["language"] == "pt"
+    # Nada é gravado em disco automaticamente.
+    assert [p.name for p in tmp_path.iterdir()] == ["entrevista.wav"]
 
 
 def test_download_progress_and_errors(api: gui.Api, monkeypatch) -> None:
@@ -129,3 +148,42 @@ def test_friendly_error_truncates_long_messages() -> None:
 def test_paste_reads_clipboard(api: gui.Api, monkeypatch) -> None:
     monkeypatch.setattr(gui, "read_clipboard", lambda: "https://www.tiktok.com/@a/video/1")
     assert api.paste() == "https://www.tiktok.com/@a/video/1"
+
+
+def test_save_requires_a_transcription(api: gui.Api) -> None:
+    assert api.save("txt")["ok"] is False
+
+
+@pytest.mark.parametrize(
+    ("fmt", "answer", "expected_name", "start"),
+    [
+        ("txt", "escolhido.txt", "escolhido.txt", "Olá."),
+        ("srt", "legenda", "legenda.srt", "1\n00:00:00,000"),
+        ("json", ("dados.json",), "dados.json", "{"),
+    ],
+)
+def test_save_writes_only_where_chosen(
+    api: gui.Api, tmp_path: Path, fmt: str, answer, expected_name: str, start: str
+) -> None:
+    transcribe_local(api, tmp_path)
+    answer = (str(tmp_path / answer[0]),) if isinstance(answer, tuple) else str(tmp_path / answer)
+    window = FakeWindow(answer)
+    api._window = window
+
+    result = api.save(fmt)
+
+    assert result == {"ok": True, "path": str(tmp_path / expected_name)}
+    assert (tmp_path / expected_name).read_text(encoding="utf-8").startswith(start)
+    assert window.dialogs[0]["save_filename"] == f"entrevista.{fmt}"
+
+
+def test_save_cancelled(api: gui.Api, tmp_path: Path) -> None:
+    transcribe_local(api, tmp_path)
+    api._window = FakeWindow(None)
+    assert api.save("txt") == {"ok": False, "cancelled": True}
+    assert [p.name for p in tmp_path.iterdir()] == ["entrevista.wav"]
+
+
+def test_save_rejects_unknown_format(api: gui.Api, tmp_path: Path) -> None:
+    transcribe_local(api, tmp_path)
+    assert api.save("docx")["ok"] is False

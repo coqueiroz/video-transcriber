@@ -7,7 +7,7 @@ import platform
 import subprocess
 import sys
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,6 @@ from video_transcriber import downloader, formatters, pipeline, transcriber
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).parent / "web"
-DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "Transcricoes"
 APP_NAME = "Video Transcriber"
 
 # Faixas da barra de progresso (em %) para cada etapa.
@@ -40,7 +39,6 @@ class JobState:
     title: str = ""
     error: str = ""
     result: dict[str, Any] | None = None
-    outputs: list[str] = field(default_factory=list)
 
 
 def transcription_payload(job: pipeline.JobResult) -> dict[str, Any]:
@@ -57,17 +55,6 @@ def transcription_payload(job: pipeline.JobResult) -> dict[str, Any]:
             if s.text.strip()
         ],
     }
-
-
-def open_path(path: Path) -> None:
-    """Abre uma pasta ou arquivo no gerenciador de arquivos do sistema."""
-    system = platform.system()
-    if system == "Darwin":
-        subprocess.run(["open", str(path)], check=False)
-    elif system == "Windows":
-        subprocess.run(["explorer", str(path)], check=False)
-    else:
-        subprocess.run(["xdg-open", str(path)], check=False)
 
 
 def copy_to_clipboard(text: str) -> bool:
@@ -129,9 +116,9 @@ class Api:
     Atributos privados (com "_") não são expostos pelo pywebview.
     """
 
-    def __init__(self, output_dir: Path = DEFAULT_OUTPUT_DIR, device: str = "auto") -> None:
-        self._output_dir = output_dir
+    def __init__(self, device: str = "auto") -> None:
         self._device = device
+        self._last_job: pipeline.JobResult | None = None
         self._state = JobState()
         self._lock = threading.Lock()
         self._models: dict[str, Any] = {}
@@ -177,14 +164,25 @@ class Api:
         chosen = self._window.create_file_dialog(webview.FileDialog.OPEN, file_types=types)
         return chosen[0] if chosen else None
 
-    def open_output_dir(self) -> None:
-        """Abre a pasta onde as transcrições são salvas."""
-        self._output_dir.mkdir(parents=True, exist_ok=True)
-        open_path(self._output_dir)
-
-    def output_dir(self) -> str:
-        """Caminho da pasta de saída, para exibir na interface."""
-        return str(self._output_dir)
+    def save(self, fmt: str) -> dict[str, Any]:
+        """Salva a última transcrição onde o usuário escolher (nada é salvo sozinho)."""
+        job = self._last_job
+        if job is None:
+            return {"ok": False, "error": "Nenhuma transcrição para salvar."}
+        if fmt not in formatters.FORMATTERS:
+            return {"ok": False, "error": f"Formato inválido: {fmt}"}
+        path = self._ask_save_path(f"{formatters.sanitize_filename(job.title)}.{fmt}", fmt)
+        if path is None:
+            return {"ok": False, "cancelled": True}
+        if path.suffix.lower() != f".{fmt}":
+            path = path.with_name(f"{path.name}.{fmt}")
+        content = formatters.FORMATTERS[fmt](job.transcription, job.metadata)
+        try:
+            path.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            logger.exception("Falha ao salvar %s", path)
+            return {"ok": False, "error": f"Não foi possível salvar: {exc.strerror or exc}"}
+        return {"ok": True, "path": str(path)}
 
     def copy(self, text: str) -> bool:
         """Copia o texto para a área de transferência."""
@@ -195,6 +193,21 @@ class Api:
         return read_clipboard()
 
     # --- execução em segundo plano -------------------------------------------------
+
+    def _ask_save_path(self, suggested_name: str, fmt: str) -> Path | None:
+        """Abre o diálogo "Salvar como" e devolve o caminho escolhido."""
+        if self._window is None:
+            return None
+        import webview
+
+        chosen = self._window.create_file_dialog(
+            webview.FileDialog.SAVE,
+            save_filename=suggested_name,
+            file_types=(f"{fmt.upper()} (*.{fmt})",),
+        )
+        if not chosen:
+            return None
+        return Path(chosen if isinstance(chosen, str) else chosen[0])
 
     def _update(self, **changes: Any) -> None:
         with self._lock:
@@ -229,14 +242,13 @@ class Api:
                 self._update(stage="Carregando o modelo (na primeira vez ele é baixado)...")
             model = self._get_model(modelo)
             self._update(stage="Obtendo o áudio...", percent=MODEL_END)
+            self._last_job = None
 
             is_local = Path(entrada).expanduser().is_file()
             start = MODEL_END if is_local else CONVERT_END
             job = pipeline.run_job(
                 entrada,
                 model,
-                output_dir=self._output_dir,
-                formats=list(formatters.FORMATTERS),
                 language=language,
                 download_hook=self._download_hook,
                 on_source=self._on_source,
@@ -246,12 +258,9 @@ class Api:
             logger.exception("Falha ao transcrever %s", entrada)
             self._update(status="error", error=friendly_error(exc), stage="")
             return
+        self._last_job = job
         self._update(
-            status="done",
-            percent=100.0,
-            stage="Pronto!",
-            result=transcription_payload(job),
-            outputs=[str(p) for p in job.outputs],
+            status="done", percent=100.0, stage="Pronto!", result=transcription_payload(job)
         )
 
 
