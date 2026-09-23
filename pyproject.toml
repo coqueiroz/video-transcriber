@@ -25,10 +25,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+app = ["pywebview>=5"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
 transcrever = "video_transcriber.cli:app"
+transcrever-app = "video_transcriber.gui:main"
 
 [project.urls]
 Repository = "https://github.com/coqueiroz/video-transcriber"

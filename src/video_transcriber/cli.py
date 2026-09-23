@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
-import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -23,7 +21,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from video_transcriber import __version__, downloader, formatters, transcriber
+from video_transcriber import __version__, downloader, formatters, pipeline, transcriber
 
 logger = logging.getLogger("video_transcriber")
 console = Console()
@@ -123,37 +121,6 @@ def make_progress() -> Progress:
     )
 
 
-def fetch_audio(item: str, temp_dir: Path, progress: Progress) -> downloader.AudioSource:
-    """Obtém o áudio de uma entrada: arquivo local ou download via yt-dlp."""
-    path = Path(item).expanduser()
-    if path.is_file():
-        return downloader.local_source(path)
-    if not downloader.is_url(item):
-        raise ValueError(f"Não é um link válido nem um arquivo existente: {item}")
-
-    task = progress.add_task("Baixando áudio", total=None)
-
-    def hook(status: dict[str, Any]) -> None:
-        if status.get("status") == "downloading":
-            total = status.get("total_bytes") or status.get("total_bytes_estimate")
-            progress.update(task, completed=status.get("downloaded_bytes", 0), total=total)
-        elif status.get("status") == "finished":
-            progress.update(task, description="Convertendo com ffmpeg")
-
-    try:
-        return downloader.download_audio(item, temp_dir, progress_hook=hook)
-    finally:
-        progress.remove_task(task)
-
-
-def keep_audio(source: downloader.AudioSource, output_dir: Path, base_name: str) -> Path:
-    """Move o áudio temporário para a pasta de saída com um nome legível."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    target = output_dir / f"{formatters.sanitize_filename(base_name)}{source.path.suffix}"
-    shutil.move(str(source.path), target)
-    return target
-
-
 def process_item(
     item: str,
     model: Any,
@@ -163,30 +130,40 @@ def process_item(
     language: str | None,
     keep: bool,
 ) -> ItemResult:
-    """Baixa (se necessário), transcreve e grava as saídas de uma entrada."""
-    with (
-        tempfile.TemporaryDirectory(prefix="video-transcriber-") as tmp,
-        make_progress() as progress,
-    ):
-        source = fetch_audio(item, Path(tmp), progress)
-        console.print(f"  [bold]{escape(source.title)}[/bold]")
+    """Processa uma entrada mostrando barras de progresso do rich."""
+    with make_progress() as progress:
+        download_task = progress.add_task("Preparando", total=None)
+        transcribe_task = progress.add_task("Transcrevendo", total=None, visible=False)
 
-        task = progress.add_task("Transcrevendo", total=None)
-        result = transcriber.transcribe(
+        def download_hook(status: dict[str, Any]) -> None:
+            if status.get("status") == "downloading":
+                total = status.get("total_bytes") or status.get("total_bytes_estimate")
+                done = status.get("downloaded_bytes", 0)
+                progress.update(
+                    download_task, description="Baixando áudio", completed=done, total=total
+                )
+            elif status.get("status") == "finished":
+                progress.update(download_task, description="Convertendo com ffmpeg")
+
+        def on_source(source: downloader.AudioSource) -> None:
+            progress.update(download_task, visible=False)
+            progress.update(transcribe_task, visible=True)
+            console.print(f"  [bold]{escape(source.title)}[/bold]")
+
+        job = pipeline.run_job(
+            item,
             model,
-            source.path,
+            output_dir=output_dir,
+            formats=formats,
             language=language,
-            on_progress=lambda done, total: progress.update(task, completed=done, total=total),
+            keep=keep,
+            download_hook=download_hook,
+            on_source=on_source,
+            on_progress=lambda done, total: progress.update(
+                transcribe_task, completed=done, total=total
+            ),
         )
-        progress.remove_task(task)
-        if not result.segments:
-            logger.warning("Nenhuma fala detectada em %s", item)
-
-        metadata = {"titulo": source.title, "origem": source.origin}
-        outputs = formatters.write_outputs(result, output_dir, source.title, formats, metadata)
-        if keep and source.is_temporary:
-            outputs.append(keep_audio(source, output_dir, source.title))
-    return ItemResult(source=item, ok=True, outputs=outputs)
+    return ItemResult(source=item, ok=True, outputs=job.outputs)
 
 
 def print_summary(results: list[ItemResult]) -> None:

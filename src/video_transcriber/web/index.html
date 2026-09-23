@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Transcriber</title>
+<style>
+  :root {
+    --bg: #f4f2fb;
+    --bg-glow: radial-gradient(1200px 600px at 50% -10%, #e4ddff 0%, transparent 60%);
+    --card: #ffffff;
+    --text: #1d1b26;
+    --muted: #6d6a7c;
+    --border: #e5e2ee;
+    --input: #f8f7fc;
+    --accent: #6d4aff;
+    --accent-2: #c040ff;
+    --accent-soft: #efeaff;
+    --track: #ece9f5;
+    --ok: #13a36e;
+    --danger: #d93b52;
+    --danger-soft: #fdecef;
+    --shadow: 0 20px 50px -20px rgba(60, 40, 140, .25), 0 2px 6px rgba(0, 0, 0, .04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121118;
+      --bg-glow: radial-gradient(1200px 600px at 50% -10%, #2a2150 0%, transparent 60%);
+      --card: #1c1a25;
+      --text: #f1eff8;
+      --muted: #9d99ad;
+      --border: #2e2b3b;
+      --input: #15141c;
+      --accent: #8b6dff;
+      --accent-2: #d36bff;
+      --accent-soft: #2a2447;
+      --track: #2a2836;
+      --ok: #35c98f;
+      --danger: #ff6b81;
+      --danger-soft: #3a1d25;
+      --shadow: 0 20px 50px -20px rgba(0, 0, 0, .6);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  html { background: var(--bg); }
+  body {
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    background: var(--bg-glow) no-repeat fixed, var(--bg);
+    display: flex;
+    justify-content: center;
+    padding: 48px 20px;
+    overflow-y: auto;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { width: 100%; max-width: 720px; }
+
+  header { text-align: center; margin-bottom: 28px; }
+  .logo {
+    width: 64px; height: 64px; margin: 0 auto 14px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: grid; place-items: center;
+    box-shadow: 0 10px 30px -8px var(--accent);
+  }
+  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -.02em; }
+  .subtitle { color: var(--muted); margin: 0; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: var(--shadow);
+  }
+  .card + .card { margin-top: 18px; }
+
+  .input-row { display: flex; gap: 10px; }
+  .input-wrap { position: relative; flex: 1; }
+  .input-wrap svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+  input[type=text] {
+    width: 100%; height: 52px;
+    padding: 0 16px 0 44px;
+    font: inherit; font-size: 16px;
+    color: var(--text);
+    background: var(--input);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type=text]:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  input[type=text]::placeholder { color: var(--muted); }
+
+  button {
+    font: inherit; cursor: pointer; border: none; border-radius: 12px;
+    transition: transform .08s, opacity .15s, background .15s;
+  }
+  button:active:not(:disabled) { transform: scale(.97); }
+  button:disabled { opacity: .5; cursor: default; }
+  .primary {
+    height: 52px; padding: 0 24px;
+    font-weight: 600; font-size: 16px; color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 14px;
+    box-shadow: 0 8px 20px -8px var(--accent);
+  }
+  .ghost {
+    padding: 8px 14px; color: var(--text);
+    background: transparent; border: 1px solid var(--border);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .ghost:hover:not(:disabled) { background: var(--accent-soft); }
+  .link {
+    background: none; padding: 0; color: var(--accent); font-weight: 500;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+
+  .options {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 12px; margin-top: 16px;
+  }
+  .selects { display: flex; gap: 10px; flex-wrap: wrap; }
+  label.select { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; }
+  select {
+    font: inherit; font-size: 14px; color: var(--text);
+    background: var(--input); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px 10px; outline: none;
+  }
+
+  /* Progresso */
+  .progress-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+  .stage { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .percent { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .track { height: 12px; background: var(--track); border-radius: 99px; overflow: hidden; }
+  .bar {
+    height: 100%; width: 0%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width .35s ease;
+    position: relative; overflow: hidden;
+  }
+  .bar::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+    transform: translateX(-100%);
+    animation: shimmer 1.4s infinite;
+  }
+  .done .bar::after { display: none; }
+  .done .bar { background: var(--ok); }
+  @keyframes shimmer { to { transform: translateX(100%); } }
+  .video-title { margin: 12px 0 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Resultado */
+  .result-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .result-head h2 { font-size: 18px; margin: 0; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .tabs { display: inline-flex; background: var(--input); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .tabs button { padding: 5px 12px; background: transparent; color: var(--muted); border-radius: 8px; font-size: 13px; }
+  .tabs button.active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .transcript {
+    background: var(--input); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px; max-height: 360px; overflow-y: auto;
+    white-space: pre-wrap; line-height: 1.7; font-size: 15px;
+    user-select: text; -webkit-user-select: text;
+  }
+  .seg { display: flex; gap: 12px; }
+  .seg time { color: var(--accent); font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 2px; flex-shrink: 0; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .saved { margin-top: 12px; font-size: 13px; color: var(--muted); }
+
+  .error {
+    background: var(--danger-soft); color: var(--danger);
+    border-radius: 14px; padding: 14px 16px; margin-top: 16px; font-size: 14px;
+    word-break: break-word;
+  }
+  .hidden { display: none !important; }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 99px;
+    font-size: 14px; opacity: 0; transition: all .25s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 24px; }
+
+  @media (max-width: 560px) {
+    body { padding: 28px 14px; }
+    .input-row { flex-direction: column; }
+    .primary { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+        <path d="M3 10v4M7 7v10M11 4v16M15 8v8M19 11v2"/>
+      </svg>
+    </div>
+    <h1>Video Transcriber</h1>
+    <p class="subtitle">Cole o link de um vídeo do YouTube, TikTok ou Instagram e receba o texto.</p>
+  </header>
+
+  <section class="card">
+    <form id="form" class="input-row" autocomplete="off">
+      <div class="input-wrap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <input id="entrada" type="text" placeholder="https://www.youtube.com/watch?v=..." autofocus spellcheck="false">
+      </div>
+      <button id="go" class="primary" type="submit">Transcrever</button>
+    </form>
+
+    <div class="options">
+      <button id="pick" class="link" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        ou escolher um arquivo do computador
+      </button>
+      <div class="selects">
+        <label class="select">Idioma
+          <select id="idioma">
+            <option value="auto">Detectar automaticamente</option>
+            <option value="pt" selected>Português</option>
+            <option value="en">Inglês</option>
+            <option value="es">Espanhol</option>
+            <option value="fr">Francês</option>
+          </select>
+        </label>
+        <label class="select">Qualidade
+          <select id="modelo">
+            <option value="base">Rápida</option>
+            <option value="small" selected>Equilibrada</option>
+            <option value="medium">Alta (mais lenta)</option>
+            <option value="large-v3">Máxima (muito lenta)</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div id="error" class="error hidden"></div>
+  </section>
+
+  <section id="progress" class="card hidden">
+    <div class="progress-head">
+      <span id="stage" class="stage">Preparando...</span>
+      <span id="percent" class="percent">0%</span>
+    </div>
+    <div class="track"><div id="bar" class="bar"></div></div>
+    <p id="video-title" class="video-title hidden"></p>
+  </section>
+
+  <section id="result" class="card hidden">
+    <div class="result-head">
+      <div>
+        <h2>Transcrição</h2>
+        <div id="meta" class="meta"></div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button id="tab-text" class="active" type="button">Texto</button>
+        <button id="tab-times" type="button">Com tempos</button>
+      </div>
+    </div>
+    <div id="transcript" class="transcript"></div>
+    <div class="actions">
+      <button id="copy" class="ghost" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copiar texto
+      </button>
+      <button id="folder" class="ghost" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Abrir pasta
+      </button>
+      <button id="new" class="ghost" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Nova transcrição
+      </button>
+    </div>
+    <p id="saved" class="saved"></p>
+  </section>
+
+  <footer>Tudo roda no seu computador. Use apenas para fins pessoais e respeite os direitos dos criadores.</footer>
+</main>
+<div id="toast" class="toast"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const LANGS = { pt: "Português", en: "Inglês", es: "Espanhol", fr: "Francês", it: "Italiano", de: "Alemão" };
+  let api = null;
+  let pollTimer = null;
+  let current = null;
+  let view = "text";
+
+  function show(el, visible) { el.classList.toggle("hidden", !visible); }
+
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 1800);
+  }
+
+  function fmtTime(sec) {
+    sec = Math.floor(sec);
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    const mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
+    return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  function setBusy(busy) {
+    $("go").disabled = busy;
+    $("pick").disabled = busy;
+    $("entrada").disabled = busy;
+    $("go").textContent = busy ? "Transcrevendo..." : "Transcrever";
+  }
+
+  function showError(msg) {
+    $("error").textContent = msg;
+    show($("error"), !!msg);
+  }
+
+  async function start(entrada) {
+    if (!api) return;
+    showError("");
+    const res = await api.start(entrada, $("idioma").value, $("modelo").value);
+    if (!res.ok) { showError(res.error); return; }
+    setBusy(true);
+    show($("result"), false);
+    show($("progress"), true);
+    $("progress").classList.remove("done");
+    show($("video-title"), false);
+    render({ percent: 0, stage: "Preparando..." });
+    pollTimer = setInterval(poll, 250);
+  }
+
+  function render(state) {
+    const pct = Math.floor(state.percent || 0);
+    $("bar").style.width = pct + "%";
+    $("percent").textContent = pct + "%";
+    $("stage").textContent = state.stage || "";
+    if (state.title) {
+      $("video-title").textContent = state.title;
+      show($("video-title"), true);
+    }
+  }
+
+  async function poll() {
+    const state = await api.status();
+    render(state);
+    if (state.status === "done") {
+      stopPolling();
+      $("progress").classList.add("done");
+      showResult(state);
+    } else if (state.status === "error") {
+      stopPolling();
+      show($("progress"), false);
+      showError("Não foi possível transcrever: " + state.error);
+    }
+  }
+
+  function stopPolling() {
+    clearInterval(pollTimer);
+    pollTimer = null;
+    setBusy(false);
+  }
+
+  function showResult(state) {
+    current = state.result;
+    const lang = LANGS[current.language] || current.language;
+    $("meta").textContent = `${current.title} · ${lang} · ${fmtTime(current.duration)}`;
+    const folder = state.outputs.length ? state.outputs[0].replace(/[/\\][^/\\]*$/, "") : "";
+    $("saved").textContent = folder ? `Salvo em ${folder} (.txt, .srt e .json)` : "";
+    renderTranscript();
+    show($("result"), true);
+    $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderTranscript() {
+    const box = $("transcript");
+    box.textContent = "";
+    if (!current.segments.length) {
+      box.textContent = "Nenhuma fala foi detectada neste áudio.";
+      return;
+    }
+    if (view === "text") {
+      box.textContent = current.text;
+      return;
+    }
+    for (const seg of current.segments) {
+      const row = document.createElement("div");
+      row.className = "seg";
+      const time = document.createElement("time");
+      time.textContent = fmtTime(seg.start);
+      const text = document.createElement("span");
+      text.textContent = seg.text;
+      row.append(time, text);
+      box.append(row);
+    }
+  }
+
+  function setView(v) {
+    view = v;
+    $("tab-text").classList.toggle("active", v === "text");
+    $("tab-times").classList.toggle("active", v === "times");
+    if (current) renderTranscript();
+  }
+
+  function textToCopy() {
+    if (view === "text") return current.text;
+    return current.segments.map((s) => `[${fmtTime(s.start)}] ${s.text}`).join("\n");
+  }
+
+  async function copy() {
+    const text = textToCopy();
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (_) { ok = await api.copy(text); }
+    toast(ok ? "Texto copiado!" : "Não foi possível copiar");
+  }
+
+  function reset() {
+    show($("result"), false);
+    show($("progress"), false);
+    showError("");
+    $("entrada").value = "";
+    $("entrada").focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); start($("entrada").value); });
+  $("pick").addEventListener("click", async () => {
+    const path = await api.pick_file();
+    if (path) { $("entrada").value = path; start(path); }
+  });
+  $("tab-text").addEventListener("click", () => setView("text"));
+  $("tab-times").addEventListener("click", () => setView("times"));
+  $("copy").addEventListener("click", copy);
+  $("folder").addEventListener("click", () => api.open_output_dir());
+  $("new").addEventListener("click", reset);
+
+  window.addEventListener("pywebviewready", () => { api = window.pywebview.api; });
+</script>
+</body>
+</html>

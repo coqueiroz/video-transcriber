@@ -18,6 +18,7 @@ Ferramenta de linha de comando que baixa o áudio de vídeos do YouTube, TikTok,
 - Saída em texto puro, legenda `.srt` ou `.json` com tempos de cada trecho
 - Nomes de arquivo seguros gerados a partir do título do vídeo
 - Progresso no terminal e resumo final com sucessos e falhas; um link com erro não interrompe os demais
+- **Aplicativo com interface gráfica**: cole o link, acompanhe a barra de progresso e leia a transcrição na própria janela
 - Tudo roda na sua máquina: nenhum áudio é enviado para serviços externos
 
 ## Requisitos
@@ -55,7 +56,29 @@ Pronto: o comando `transcrever` fica disponível enquanto o ambiente virtual est
 
 > Na primeira execução o modelo do Whisper é baixado automaticamente (de ~75 MB a ~3 GB, conforme o modelo) e fica em cache.
 
-## Uso
+## Aplicativo (interface gráfica)
+
+Prefere não usar o terminal? O projeto inclui uma janela simples: cole o link, clique em
+**Transcrever**, acompanhe a porcentagem e leia (ou copie) o texto quando chegar a 100%.
+Também dá para escolher um arquivo do computador. As transcrições são salvas em
+`~/Documents/Transcricoes` (em .txt, .srt e .json).
+
+```bash
+pip install -e ".[app]"
+transcrever-app
+```
+
+**No macOS, como um programa de verdade** (ícone no Launchpad, Spotlight e Dock):
+
+```bash
+./scripts/criar_app_macos.sh
+```
+
+O script cria `~/Applications/Video Transcriber.app`. O app usa o ambiente virtual do projeto,
+então mantenha a pasta do projeto onde está (se movê-la, recrie o `.venv` e rode o script de novo).
+Em caso de erro, veja o log em `~/Library/Logs/VideoTranscriber.log`.
+
+## Uso pelo terminal
 
 ```bash
 # Um link
@@ -107,7 +130,7 @@ Em CPU o modelo roda em `int8`; com GPU NVIDIA (`cuda`), em `float16`. Informar 
 ## Desenvolvimento
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,app]"
 ruff check .
 pytest
 ```
@@ -116,7 +139,10 @@ Estrutura:
 
 ```
 src/video_transcriber/
-├── cli.py          # interface (typer + rich)
+├── cli.py          # interface de terminal (typer + rich)
+├── gui.py          # interface gráfica (pywebview)
+├── web/            # HTML/CSS/JS da janela
+├── pipeline.py     # fluxo compartilhado: obter áudio → transcrever → salvar
 ├── downloader.py   # download do áudio com yt-dlp
 ├── transcriber.py  # transcrição com faster-whisper
 └── formatters.py   # geração de txt/srt/json e nomes de arquivo seguros
@@ -146,6 +172,7 @@ Os autores não se responsabilizam pelo uso indevido do software.
 pip install -e .
 transcrever "https://youtu.be/VIDEO_ID" --idioma en --formato srt
 transcrever --arquivo links.txt --formato todos
+transcrever-app   # desktop window (pip install -e ".[app]")
 ```
 
 Requires Python 3.10+ and ffmpeg. Intended for personal and educational use only: respect each platform's terms of service and creators' copyrights, and do not redistribute third-party content.
