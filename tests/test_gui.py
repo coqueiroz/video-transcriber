@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +15,9 @@ from video_transcriber import downloader, gui, transcriber
 @pytest.fixture
 def api(monkeypatch, fake_model) -> gui.Api:
     monkeypatch.setattr(transcriber, "load_model", lambda name, device: fake_model)
+    # pywebview is optional (the [app] extra); the dialogs only need its constants.
+    fake_webview = SimpleNamespace(FileDialog=SimpleNamespace(OPEN=10, SAVE=30))
+    monkeypatch.setitem(sys.modules, "webview", fake_webview)
     return gui.Api()
 
 
