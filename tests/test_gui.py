@@ -124,3 +124,8 @@ def test_friendly_error_truncates_long_messages() -> None:
     assert len(message) < gui.MAX_ERROR_LENGTH + len(gui.LOG_HINT) + 5
     assert "segunda linha" not in message
     assert gui.LOG_HINT in message
+
+
+def test_paste_reads_clipboard(api: gui.Api, monkeypatch) -> None:
+    monkeypatch.setattr(gui, "read_clipboard", lambda: "https://www.tiktok.com/@a/video/1")
+    assert api.paste() == "https://www.tiktok.com/@a/video/1"

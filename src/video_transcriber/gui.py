@@ -81,6 +81,20 @@ def copy_to_clipboard(text: str) -> bool:
     return True
 
 
+def read_clipboard() -> str:
+    """Lê o texto da área de transferência usando ferramentas do sistema."""
+    commands = {
+        "Darwin": ["pbpaste"],
+        "Windows": ["powershell", "-NoProfile", "-Command", "Get-Clipboard"],
+    }
+    command = commands.get(platform.system(), ["xclip", "-selection", "clipboard", "-o"])
+    try:
+        result = subprocess.run(command, capture_output=True, check=True)
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
 KNOWN_ERRORS = {
     "incompatible architecture": (
         "O app foi aberto no modo Intel (Rosetta). Recrie o app com "
@@ -175,6 +189,10 @@ class Api:
     def copy(self, text: str) -> bool:
         """Copia o texto para a área de transferência."""
         return copy_to_clipboard(text)
+
+    def paste(self) -> str:
+        """Devolve o texto da área de transferência (para o botão e o menu "Colar")."""
+        return read_clipboard()
 
     # --- execução em segundo plano -------------------------------------------------
 

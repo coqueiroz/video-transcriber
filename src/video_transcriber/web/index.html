@@ -81,7 +81,7 @@
   .input-wrap svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }
   input[type=text] {
     width: 100%; height: 52px;
-    padding: 0 16px 0 44px;
+    padding: 0 96px 0 44px;
     font: inherit; font-size: 16px;
     color: var(--text);
     background: var(--input);
@@ -175,6 +175,26 @@
     border-radius: 14px; padding: 14px 16px; margin-top: 16px; font-size: 14px;
     word-break: break-word;
   }
+  .paste-btn {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    height: 36px; padding: 0 12px; font-size: 13px; font-weight: 500;
+    color: var(--accent); background: var(--accent-soft);
+    display: inline-flex; align-items: center; gap: 6px; border-radius: 10px;
+  }
+  .paste-btn:active:not(:disabled) { transform: translateY(-50%) scale(.97); }
+  .paste-btn svg { position: static; transform: none; color: currentColor; }
+  .ctx-menu {
+    position: fixed; z-index: 10; min-width: 180px; padding: 5px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 12px 30px -8px rgba(0,0,0,.35);
+  }
+  .ctx-menu button {
+    display: flex; justify-content: space-between; width: 100%; gap: 16px;
+    padding: 6px 10px; border-radius: 6px; font-size: 13px; text-align: left;
+    background: transparent; color: var(--text);
+  }
+  .ctx-menu button:hover:not(:disabled) { background: var(--accent); color: #fff; }
+  .ctx-menu kbd { font: inherit; opacity: .55; }
   .hidden { display: none !important; }
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -208,6 +228,10 @@
       <div class="input-wrap">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         <input id="entrada" type="text" placeholder="https://www.youtube.com/watch?v=..." autofocus spellcheck="false">
+        <button id="paste" class="paste-btn" type="button" title="Colar o link copiado">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+          Colar
+        </button>
       </div>
       <button id="go" class="primary" type="submit">Transcrever</button>
     </form>
@@ -282,6 +306,12 @@
   <footer>Tudo roda no seu computador. Use apenas para fins pessoais e respeite os direitos dos criadores.</footer>
 </main>
 <div id="toast" class="toast"></div>
+<div id="ctx" class="ctx-menu hidden" role="menu">
+  <button data-action="cut" type="button">Recortar <kbd>⌘X</kbd></button>
+  <button data-action="copy" type="button">Copiar <kbd>⌘C</kbd></button>
+  <button data-action="paste" type="button">Colar <kbd>⌘V</kbd></button>
+  <button data-action="selectAll" type="button">Selecionar tudo <kbd>⌘A</kbd></button>
+</div>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -310,6 +340,7 @@
   function setBusy(busy) {
     $("go").disabled = busy;
     $("pick").disabled = busy;
+    $("paste").disabled = busy;
     $("entrada").disabled = busy;
     $("go").textContent = busy ? "Transcrevendo..." : "Transcrever";
   }
@@ -436,6 +467,95 @@
   $("copy").addEventListener("click", copy);
   $("folder").addEventListener("click", () => api.open_output_dir());
   $("new").addEventListener("click", reset);
+
+  // --- Colar e menu do botão direito (o pywebview remove o menu nativo) ---------
+  async function readClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) return text;
+    } catch (_) { /* sem permissão: usa o Python */ }
+    return api ? await api.paste() : "";
+  }
+
+  async function writeClipboard(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
+    return api ? await api.copy(text) : false;
+  }
+
+  function insertIntoInput(input, text) {
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.setRangeText(text.trim(), start, end, "end");
+    input.focus();
+  }
+
+  $("paste").addEventListener("click", async () => {
+    const text = await readClipboard();
+    if (!text) { toast("A área de transferência está vazia"); return; }
+    $("entrada").value = text.trim();
+    $("entrada").focus();
+  });
+
+  const ctx = $("ctx");
+  let ctxTarget = null;
+
+  function hideMenu() { show(ctx, false); ctxTarget = null; }
+
+  document.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    const input = e.target.closest("input[type=text]");
+    const selection = window.getSelection().toString();
+    const inTranscript = e.target.closest("#transcript");
+    if (!input && !inTranscript && !selection) { hideMenu(); return; }
+
+    ctxTarget = input || e.target.closest("#transcript") || document.body;
+    const hasSel = input ? input.selectionStart !== input.selectionEnd : !!selection;
+    const editable = !!input && !input.disabled;
+    for (const btn of ctx.querySelectorAll("button")) {
+      const action = btn.dataset.action;
+      btn.hidden = !editable && (action === "cut" || action === "paste");
+      btn.disabled = (action === "cut" || action === "copy") && !hasSel;
+    }
+    show(ctx, true);
+    const x = Math.min(e.clientX, window.innerWidth - ctx.offsetWidth - 8);
+    const y = Math.min(e.clientY, window.innerHeight - ctx.offsetHeight - 8);
+    ctx.style.left = x + "px";
+    ctx.style.top = y + "px";
+  });
+
+  ctx.addEventListener("mousedown", (e) => e.preventDefault()); // mantém a seleção
+  ctx.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || btn.disabled) return;
+    const target = ctxTarget;
+    const action = btn.dataset.action;
+    hideMenu();
+    const isInput = target instanceof HTMLInputElement;
+
+    if (action === "paste" && isInput) {
+      const text = await readClipboard();
+      if (text) insertIntoInput(target, text);
+    } else if (action === "copy" || action === "cut") {
+      const text = isInput
+        ? target.value.slice(target.selectionStart, target.selectionEnd)
+        : window.getSelection().toString();
+      if (text) await writeClipboard(text);
+      if (action === "cut" && isInput) insertIntoInput(target, "");
+    } else if (action === "selectAll") {
+      if (isInput) { target.focus(); target.select(); }
+      else {
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+      }
+    }
+  });
+
+  document.addEventListener("click", (e) => { if (!ctx.contains(e.target)) hideMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideMenu(); });
+  window.addEventListener("blur", hideMenu);
+  window.addEventListener("scroll", hideMenu, true);
 
   window.addEventListener("pywebviewready", () => { api = window.pywebview.api; });
 </script>
