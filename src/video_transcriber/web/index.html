@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -220,43 +220,45 @@
       </svg>
     </div>
     <h1>Video Transcriber</h1>
-    <p class="subtitle">Cole o link de um vídeo do YouTube, TikTok ou Instagram e receba o texto.</p>
+    <p class="subtitle">Paste a YouTube, TikTok or Instagram link and get the text.</p>
   </header>
 
   <section class="card">
     <form id="form" class="input-row" autocomplete="off">
       <div class="input-wrap">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        <input id="entrada" type="text" placeholder="https://www.youtube.com/watch?v=..." autofocus spellcheck="false">
-        <button id="paste" class="paste-btn" type="button" title="Colar o link copiado">
+        <input id="source" type="text" placeholder="https://www.youtube.com/watch?v=..." autofocus spellcheck="false">
+        <button id="paste" class="paste-btn" type="button" title="Paste the copied link">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
-          Colar
+          Paste
         </button>
       </div>
-      <button id="go" class="primary" type="submit">Transcrever</button>
+      <button id="go" class="primary" type="submit">Transcribe</button>
     </form>
 
     <div class="options">
       <button id="pick" class="link" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        ou escolher um arquivo do computador
+        or choose a file from your computer
       </button>
       <div class="selects">
-        <label class="select">Idioma
-          <select id="idioma">
-            <option value="auto">Detectar automaticamente</option>
-            <option value="pt" selected>Português</option>
-            <option value="en">Inglês</option>
-            <option value="es">Espanhol</option>
-            <option value="fr">Francês</option>
+        <label class="select">Language
+          <select id="language">
+            <option value="auto" selected>Auto-detect</option>
+            <option value="en">English</option>
+            <option value="pt">Portuguese</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="it">Italian</option>
           </select>
         </label>
-        <label class="select">Qualidade
-          <select id="modelo">
-            <option value="base">Rápida</option>
-            <option value="small" selected>Equilibrada</option>
-            <option value="medium">Alta (mais lenta)</option>
-            <option value="large-v3">Máxima (muito lenta)</option>
+        <label class="select">Quality
+          <select id="model">
+            <option value="base">Fast</option>
+            <option value="small" selected>Balanced</option>
+            <option value="medium">High (slower)</option>
+            <option value="large-v3">Best (very slow)</option>
           </select>
         </label>
       </div>
@@ -267,7 +269,7 @@
 
   <section id="progress" class="card hidden">
     <div class="progress-head">
-      <span id="stage" class="stage">Preparando...</span>
+      <span id="stage" class="stage">Preparing...</span>
       <span id="percent" class="percent">0%</span>
     </div>
     <div class="track"><div id="bar" class="bar"></div></div>
@@ -277,49 +279,64 @@
   <section id="result" class="card hidden">
     <div class="result-head">
       <div>
-        <h2>Transcrição</h2>
+        <h2>Transcript</h2>
         <div id="meta" class="meta"></div>
       </div>
       <div class="tabs" role="tablist">
-        <button id="tab-text" class="active" type="button">Texto</button>
-        <button id="tab-times" type="button">Com tempos</button>
+        <button id="tab-text" class="active" type="button">Text</button>
+        <button id="tab-times" type="button">With timestamps</button>
       </div>
     </div>
     <div id="transcript" class="transcript"></div>
     <div class="actions">
       <button id="copy" class="ghost" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        Copiar texto
+        Copy text
       </button>
       <button id="save" class="ghost" type="button" aria-haspopup="menu">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-        Salvar…
+        Save…
       </button>
       <button id="new" class="ghost" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        Nova transcrição
+        New transcription
       </button>
     </div>
   </section>
 
-  <footer>Tudo roda no seu computador e nada é salvo sem você pedir. Use apenas para fins pessoais e respeite os direitos dos criadores.</footer>
+  <footer>Everything runs on your computer and nothing is saved unless you ask. For personal use only — respect creators' rights.</footer>
 </main>
 <div id="toast" class="toast"></div>
 <div id="save-menu" class="ctx-menu hidden" role="menu">
-  <button data-format="txt" type="button">Texto <small>.txt</small></button>
-  <button data-format="srt" type="button">Legenda <small>.srt</small></button>
-  <button data-format="json" type="button">Dados com tempos <small>.json</small></button>
+  <button data-format="txt" type="button">Text <small>.txt</small></button>
+  <button data-format="srt" type="button">Subtitles <small>.srt</small></button>
+  <button data-format="json" type="button">Timed data <small>.json</small></button>
 </div>
 <div id="ctx" class="ctx-menu hidden" role="menu">
-  <button data-action="cut" type="button">Recortar <kbd>⌘X</kbd></button>
-  <button data-action="copy" type="button">Copiar <kbd>⌘C</kbd></button>
-  <button data-action="paste" type="button">Colar <kbd>⌘V</kbd></button>
-  <button data-action="selectAll" type="button">Selecionar tudo <kbd>⌘A</kbd></button>
+  <button data-action="cut" type="button">Cut <kbd data-key="X"></kbd></button>
+  <button data-action="copy" type="button">Copy <kbd data-key="C"></kbd></button>
+  <button data-action="paste" type="button">Paste <kbd data-key="V"></kbd></button>
+  <button data-action="selectAll" type="button">Select all <kbd data-key="A"></kbd></button>
 </div>
 
 <script>
   const $ = (id) => document.getElementById(id);
-  const LANGS = { pt: "Português", en: "Inglês", es: "Espanhol", fr: "Francês", it: "Italiano", de: "Alemão" };
+  const LANGS = { en: "English", pt: "Portuguese", es: "Spanish", fr: "French", it: "Italian", de: "German" };
+  const IS_MAC = /Mac/i.test(navigator.platform || navigator.userAgent);
+  for (const k of document.querySelectorAll("kbd[data-key]")) {
+    k.textContent = (IS_MAC ? "⌘" : "Ctrl+") + k.dataset.key;
+  }
+
+  // Remember the chosen language and quality (per-user convenience only).
+  for (const id of ["language", "model"]) {
+    try {
+      const saved = localStorage.getItem("vt-" + id);
+      if (saved && [...$(id).options].some((o) => o.value === saved)) $(id).value = saved;
+    } catch (_) { /* storage unavailable */ }
+    $(id).addEventListener("change", () => {
+      try { localStorage.setItem("vt-" + id, $(id).value); } catch (_) {}
+    });
+  }
   let api = null;
   let pollTimer = null;
   let current = null;
@@ -345,8 +362,8 @@
     $("go").disabled = busy;
     $("pick").disabled = busy;
     $("paste").disabled = busy;
-    $("entrada").disabled = busy;
-    $("go").textContent = busy ? "Transcrevendo..." : "Transcrever";
+    $("source").disabled = busy;
+    $("go").textContent = busy ? "Transcribing..." : "Transcribe";
   }
 
   function showError(msg) {
@@ -354,17 +371,17 @@
     show($("error"), !!msg);
   }
 
-  async function start(entrada) {
+  async function start(source) {
     if (!api) return;
     showError("");
-    const res = await api.start(entrada, $("idioma").value, $("modelo").value);
+    const res = await api.start(source, $("language").value, $("model").value);
     if (!res.ok) { showError(res.error); return; }
     setBusy(true);
     show($("result"), false);
     show($("progress"), true);
     $("progress").classList.remove("done");
     show($("video-title"), false);
-    render({ percent: 0, stage: "Preparando..." });
+    render({ percent: 0, stage: "Preparing..." });
     pollTimer = setInterval(poll, 250);
   }
 
@@ -389,7 +406,7 @@
     } else if (state.status === "error") {
       stopPolling();
       show($("progress"), false);
-      showError("Não foi possível transcrever: " + state.error);
+      showError("Could not transcribe: " + state.error);
     }
   }
 
@@ -412,7 +429,7 @@
     const box = $("transcript");
     box.textContent = "";
     if (!current.segments.length) {
-      box.textContent = "Nenhuma fala foi detectada neste áudio.";
+      box.textContent = "No speech was detected in this audio.";
       return;
     }
     if (view === "text") {
@@ -447,27 +464,27 @@
     const text = textToCopy();
     let ok = false;
     try { await navigator.clipboard.writeText(text); ok = true; } catch (_) { ok = await api.copy(text); }
-    toast(ok ? "Texto copiado!" : "Não foi possível copiar");
+    toast(ok ? "Text copied!" : "Could not copy");
   }
 
   function reset() {
     show($("result"), false);
     show($("progress"), false);
     showError("");
-    $("entrada").value = "";
-    $("entrada").focus();
+    $("source").value = "";
+    $("source").focus();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  $("form").addEventListener("submit", (e) => { e.preventDefault(); start($("entrada").value); });
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); start($("source").value); });
   $("pick").addEventListener("click", async () => {
     const path = await api.pick_file();
-    if (path) { $("entrada").value = path; start(path); }
+    if (path) { $("source").value = path; start(path); }
   });
   $("tab-text").addEventListener("click", () => setView("text"));
   $("tab-times").addEventListener("click", () => setView("times"));
   $("copy").addEventListener("click", copy);
-  // --- Salvar (só quando o usuário pede) ---------------------------------------
+  // --- Save (only when the user asks) -------------------------------------------
   const saveMenu = $("save-menu");
   $("save").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -482,8 +499,8 @@
     if (!btn) return;
     show(saveMenu, false);
     const res = await api.save(btn.dataset.format);
-    if (res.ok) toast("Arquivo salvo!");
-    else if (!res.cancelled) toast(res.error || "Não foi possível salvar");
+    if (res.ok) toast("File saved!");
+    else if (!res.cancelled) toast(res.error || "Could not save");
   });
   document.addEventListener("click", (e) => {
     if (!saveMenu.contains(e.target) && e.target !== $("save")) show(saveMenu, false);
@@ -491,12 +508,12 @@
   window.addEventListener("scroll", () => show(saveMenu, false), true);
   $("new").addEventListener("click", reset);
 
-  // --- Colar e menu do botão direito (o pywebview remove o menu nativo) ---------
+  // --- Paste and right-click menu (pywebview removes the native one) ------------
   async function readClipboard() {
     try {
       const text = await navigator.clipboard.readText();
       if (text) return text;
-    } catch (_) { /* sem permissão: usa o Python */ }
+    } catch (_) { /* no permission: fall back to Python */ }
     return api ? await api.paste() : "";
   }
 
@@ -514,9 +531,9 @@
 
   $("paste").addEventListener("click", async () => {
     const text = await readClipboard();
-    if (!text) { toast("A área de transferência está vazia"); return; }
-    $("entrada").value = text.trim();
-    $("entrada").focus();
+    if (!text) { toast("The clipboard is empty"); return; }
+    $("source").value = text.trim();
+    $("source").focus();
   });
 
   const ctx = $("ctx");
@@ -546,7 +563,7 @@
     ctx.style.top = y + "px";
   });
 
-  ctx.addEventListener("mousedown", (e) => e.preventDefault()); // mantém a seleção
+  ctx.addEventListener("mousedown", (e) => e.preventDefault()); // keeps the selection
   ctx.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn || btn.disabled) return;

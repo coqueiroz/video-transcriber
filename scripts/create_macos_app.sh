@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Cria "Video Transcriber.app" (padrão: ~/Applications) que abre a interface gráfica.
-# O app usa o ambiente virtual deste projeto, então mantenha a pasta do projeto no lugar.
-# Uso: ./scripts/criar_app_macos.sh [pasta_de_destino]
+# Creates "Video Transcriber.app" (default: ~/Applications) that opens the desktop app.
+# The app uses this project's virtual environment, so keep the project folder in place.
+# Usage: ./scripts/create_macos_app.sh [destination_folder]
 set -euo pipefail
 
 APP_NAME="Video Transcriber"
@@ -11,24 +11,24 @@ APP="$DEST_DIR/$APP_NAME.app"
 PYTHON="$PROJECT_DIR/.venv/bin/python"
 
 if [[ "$(uname)" != "Darwin" ]]; then
-  echo "Este script é só para macOS." >&2
+  echo "This script is for macOS only." >&2
   exit 1
 fi
 if [[ ! -x "$PYTHON" ]]; then
-  echo "Ambiente virtual não encontrado em $PROJECT_DIR/.venv" >&2
-  echo "Crie com: python3 -m venv .venv && .venv/bin/pip install -e \".[app]\"" >&2
+  echo "Virtual environment not found at $PROJECT_DIR/.venv" >&2
+  echo "Create it with: python3 -m venv .venv && .venv/bin/pip install -e \".[app]\"" >&2
   exit 1
 fi
 if ! "$PYTHON" -c "import webview" 2>/dev/null; then
-  echo "Instalando a interface gráfica (pywebview)..."
+  echo "Installing the desktop UI dependency (pywebview)..."
   "$PYTHON" -m pip install -q -e "$PROJECT_DIR[app]"
 fi
 
-echo "Criando $APP"
+echo "Creating $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-# Ícone (.icns) a partir do PNG
+# Icon (.icns) from the PNG
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
@@ -46,8 +46,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>io.github.coqueiroz.video-transcriber</string>
-  <key>CFBundleVersion</key><string>0.2.0</string>
-  <key>CFBundleShortVersionString</key><string>0.2.0</string>
+  <key>CFBundleVersion</key><string>0.3.0</string>
+  <key>CFBundleShortVersionString</key><string>0.3.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>launcher</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -59,9 +59,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Apps abertos pelo Finder não herdam o PATH do terminal: incluímos o Homebrew (ffmpeg).
-# Um executável em shell script pode ser aberto pelo macOS via Rosetta (Intel) em Macs
-# Apple Silicon; forçamos arm64 para que as bibliotecas nativas (av, ctranslate2) carreguem.
+# Apps opened from Finder don't inherit the terminal PATH: add Homebrew (ffmpeg).
+# macOS may launch a shell-script executable under Rosetta (Intel) on Apple Silicon;
+# force arm64 so the native libraries (av, ctranslate2) can load.
 cat > "$APP/Contents/MacOS/launcher" <<LAUNCHER
 #!/bin/bash
 export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
@@ -74,5 +74,5 @@ LAUNCHER
 chmod +x "$APP/Contents/MacOS/launcher"
 
 touch "$APP"
-echo "Pronto! Abra \"$APP_NAME\" pelo Launchpad, Spotlight (⌘ + espaço) ou em $DEST_DIR."
-echo "Dica: com o app aberto, clique com o botão direito no ícone do Dock > Opções > Manter no Dock."
+echo "Done! Open \"$APP_NAME\" from Launchpad, Spotlight (⌘ + Space) or $DEST_DIR."
+echo "Tip: while it's open, right-click its Dock icon > Options > Keep in Dock."

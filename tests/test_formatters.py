@@ -1,4 +1,4 @@
-"""Testes de formatação das saídas e sanitização de nomes."""
+"""Tests for output formatting and filename sanitization."""
 
 from __future__ import annotations
 
@@ -14,15 +14,15 @@ from video_transcriber.transcriber import Transcription
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("Vídeo normal", "Vídeo normal"),
+        ("Normal video", "Normal video"),
         ('a<b>c:d"e/f\\g|h?i*j', "a b c d e f g h i j"),
-        ("  espaços   demais  ", "espaços demais"),
-        ("linha\nnova\ttab", "linha nova tab"),
-        ("termina com ponto...", "termina com ponto"),
-        ("Emoji 🎉 e acentuação çãé", "Emoji 🎉 e acentuação çãé"),
-        ("", "sem_titulo"),
-        ("???", "sem_titulo"),
-        ("...", "sem_titulo"),
+        ("  too   many spaces  ", "too many spaces"),
+        ("new\nline\ttab", "new line tab"),
+        ("ends with dots...", "ends with dots"),
+        ("Emoji 🎉 and accents çãé", "Emoji 🎉 and accents çãé"),
+        ("", "untitled"),
+        ("???", "untitled"),
+        ("...", "untitled"),
         ("CON", "_CON"),
         ("nul.txt", "_nul.txt"),
         ("CONSOLE", "CONSOLE"),
@@ -33,7 +33,7 @@ def test_sanitize_filename(raw: str, expected: str) -> None:
 
 
 def test_sanitize_filename_normalizes_unicode() -> None:
-    decomposed = "Café"  # "e" + acento combinante
+    decomposed = "Café"  # "e" + combining accent
     assert sanitize_filename(decomposed) == "Café"
 
 
@@ -63,27 +63,27 @@ def test_format_timestamp_custom_separator() -> None:
 
 
 def test_to_txt_skips_empty_segments(transcription: Transcription) -> None:
-    assert formatters.to_txt(transcription) == "Olá, mundo!\nSegunda frase.\n"
+    assert formatters.to_txt(transcription) == "Hello, world!\nOlá, segunda frase.\n"
 
 
 def test_to_srt(transcription: Transcription) -> None:
     expected = (
-        "1\n00:00:00,000 --> 00:00:02,500\nOlá, mundo!\n"
+        "1\n00:00:00,000 --> 00:00:02,500\nHello, world!\n"
         "\n"
-        "2\n00:00:03,000 --> 01:01:01,042\nSegunda frase.\n"
+        "2\n00:00:03,000 --> 01:01:01,042\nOlá, segunda frase.\n"
     )
     assert formatters.to_srt(transcription) == expected
 
 
 def test_to_json(transcription: Transcription) -> None:
-    data = json.loads(formatters.to_json(transcription, {"titulo": "Teste", "origem": "x"}))
-    assert data["titulo"] == "Teste"
-    assert data["origem"] == "x"
-    assert data["idioma"] == "pt"
-    assert data["probabilidade_idioma"] == 0.9877
-    assert data["texto"] == "Olá, mundo! Segunda frase."
-    assert data["segmentos"][0] == {"inicio": 0.0, "fim": 2.5, "texto": "Olá, mundo!"}
-    assert len(data["segmentos"]) == 3
+    data = json.loads(formatters.to_json(transcription, {"title": "Test", "source": "x"}))
+    assert data["title"] == "Test"
+    assert data["source"] == "x"
+    assert data["language"] == "en"
+    assert data["language_probability"] == 0.9877
+    assert data["text"] == "Hello, world! Olá, segunda frase."
+    assert data["segments"][0] == {"start": 0.0, "end": 2.5, "text": "Hello, world!"}
+    assert len(data["segments"]) == 3
 
 
 def test_to_json_keeps_accents() -> None:
@@ -97,9 +97,9 @@ def test_empty_transcription() -> None:
 
 
 def test_write_outputs(tmp_path, transcription: Transcription) -> None:
-    out = tmp_path / "saida" / "sub"
-    paths = formatters.write_outputs(transcription, out, "Meu: vídeo?", ["txt", "srt", "json"])
+    out = tmp_path / "out" / "sub"
+    paths = formatters.write_outputs(transcription, out, "My: video?", ["txt", "srt", "json"])
 
-    assert [p.name for p in paths] == ["Meu vídeo.txt", "Meu vídeo.srt", "Meu vídeo.json"]
+    assert [p.name for p in paths] == ["My video.txt", "My video.srt", "My video.json"]
     assert all(p.exists() for p in paths)
-    assert paths[0].read_text(encoding="utf-8").startswith("Olá, mundo!")
+    assert paths[0].read_text(encoding="utf-8").startswith("Hello, world!")

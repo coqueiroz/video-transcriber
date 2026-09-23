@@ -1,4 +1,4 @@
-"""Geração dos arquivos de saída (txt, srt, json) e sanitização de nomes."""
+"""Output generation (txt, srt, json) and filename sanitization."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ WINDOWS_RESERVED = {
     *(f"COM{i}" for i in range(1, 10)),
     *(f"LPT{i}" for i in range(1, 10)),
 }
-DEFAULT_NAME = "sem_titulo"
+DEFAULT_NAME = "untitled"
 
 
 def sanitize_filename(name: str, max_length: int = 120) -> str:
-    """Converte um título qualquer em um nome de arquivo seguro em todos os sistemas."""
+    """Turn any title into a filename that is safe on every operating system."""
     name = unicodedata.normalize("NFC", name or "")
     name = INVALID_CHARS.sub(" ", name)
     name = re.sub(r"\s+", " ", name).strip(" .")
@@ -37,7 +37,7 @@ def sanitize_filename(name: str, max_length: int = 120) -> str:
 
 
 def format_timestamp(seconds: float, separator: str = ",") -> str:
-    """Formata segundos como HH:MM:SS,mmm (padrão SRT)."""
+    """Format seconds as HH:MM:SS,mmm (SRT style)."""
     total_ms = max(0, round(seconds * 1000))
     hours, rest = divmod(total_ms, 3_600_000)
     minutes, rest = divmod(rest, 60_000)
@@ -46,13 +46,13 @@ def format_timestamp(seconds: float, separator: str = ",") -> str:
 
 
 def to_txt(transcription: Transcription, metadata: dict[str, Any] | None = None) -> str:
-    """Texto corrido, um segmento por linha."""
+    """Plain text, one segment per line."""
     lines = (seg.text.strip() for seg in transcription.segments)
     return "\n".join(line for line in lines if line) + "\n"
 
 
 def to_srt(transcription: Transcription, metadata: dict[str, Any] | None = None) -> str:
-    """Legenda no formato SubRip (.srt)."""
+    """SubRip subtitles (.srt)."""
     blocks = []
     segments = (seg for seg in transcription.segments if seg.text.strip())
     for index, seg in enumerate(segments, start=1):
@@ -62,15 +62,15 @@ def to_srt(transcription: Transcription, metadata: dict[str, Any] | None = None)
 
 
 def to_json(transcription: Transcription, metadata: dict[str, Any] | None = None) -> str:
-    """JSON com metadados, texto completo e segmentos com tempos."""
+    """JSON with metadata, full text and timed segments."""
     data = {
         **(metadata or {}),
-        "idioma": transcription.language,
-        "probabilidade_idioma": round(transcription.language_probability, 4),
-        "duracao": round(transcription.duration, 3),
-        "texto": transcription.text,
-        "segmentos": [
-            {"inicio": round(s.start, 3), "fim": round(s.end, 3), "texto": s.text.strip()}
+        "language": transcription.language,
+        "language_probability": round(transcription.language_probability, 4),
+        "duration": round(transcription.duration, 3),
+        "text": transcription.text,
+        "segments": [
+            {"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip()}
             for s in transcription.segments
         ],
     }
@@ -91,7 +91,7 @@ def write_outputs(
     formats: Iterable[str],
     metadata: dict[str, Any] | None = None,
 ) -> list[Path]:
-    """Grava a transcrição nos formatos pedidos e devolve os caminhos criados."""
+    """Write the transcription in the requested formats and return the created paths."""
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = sanitize_filename(base_name)
     written = []

@@ -1,4 +1,4 @@
-"""Fixtures compartilhadas."""
+"""Shared fixtures."""
 
 from __future__ import annotations
 
@@ -11,24 +11,24 @@ from video_transcriber.transcriber import Segment, Transcription
 
 @pytest.fixture
 def transcription() -> Transcription:
-    """Transcrição de exemplo com dois segmentos e um vazio."""
+    """Sample transcription with two segments and an empty one."""
     return Transcription(
         segments=[
-            Segment(0.0, 2.5, " Olá, mundo!"),
+            Segment(0.0, 2.5, " Hello, world!"),
             Segment(2.5, 2.6, "   "),
-            Segment(3.0, 3661.042, " Segunda frase."),
+            Segment(3.0, 3661.042, " Olá, segunda frase."),
         ],
-        language="pt",
+        language="en",
         language_probability=0.98765,
         duration=3662.0,
     )
 
 
 class FakeModel:
-    """Imita a interface de WhisperModel.transcribe."""
+    """Mimics the WhisperModel.transcribe interface."""
 
     def __init__(self, texts: list[str] | None = None) -> None:
-        self.texts = texts or ["Olá.", "Tudo bem?"]
+        self.texts = texts if texts is not None else ["Hello.", "How are you?"]
         self.calls: list[dict] = []
 
     def transcribe(self, path: str, **kwargs):
@@ -38,7 +38,7 @@ class FakeModel:
             for i, t in enumerate(self.texts)
         )
         info = SimpleNamespace(
-            language=kwargs.get("language") or "pt",
+            language=kwargs.get("language") or "en",
             language_probability=0.9,
             duration=float(len(self.texts)),
         )

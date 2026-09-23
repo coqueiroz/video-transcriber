@@ -1,135 +1,121 @@
-# video-transcriber
+# Video Transcriber
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE)
-[![Testes](https://github.com/coqueiroz/video-transcriber/actions/workflows/tests.yml/badge.svg)](https://github.com/coqueiroz/video-transcriber/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Tests](https://github.com/coqueiroz/video-transcriber/actions/workflows/tests.yml/badge.svg)](https://github.com/coqueiroz/video-transcriber/actions/workflows/tests.yml)
+[![Windows build](https://github.com/coqueiroz/video-transcriber/actions/workflows/build-windows.yml/badge.svg)](https://github.com/coqueiroz/video-transcriber/actions/workflows/build-windows.yml)
+[![Latest release](https://img.shields.io/github/v/release/coqueiroz/video-transcriber)](https://github.com/coqueiroz/video-transcriber/releases/latest)
 
-Ferramenta de linha de comando que baixa o áudio de vídeos do YouTube, TikTok, Instagram e [outros sites suportados pelo yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) e gera a transcrição localmente com [faster-whisper](https://github.com/SYSTRAN/faster-whisper), em `.txt`, `.srt` ou `.json`.
+Paste a YouTube, TikTok or Instagram link (or [any site supported by yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)) and get the transcript — locally, with [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Comes as a **desktop app** for Windows and macOS and as a **command-line tool**.
 
-<!-- Substitua pelo GIF de demonstração -->
+<!-- Demo GIF placeholder: record the app, save it as docs/demo.gif and uncomment:
 <p align="center">
-  <img src="docs/demo.gif" alt="Demonstração do comando transcrever" width="720">
+  <img src="docs/demo.gif" alt="Video Transcriber demo" width="720">
 </p>
+-->
 
-## Funcionalidades
+## Features
 
-- Um ou vários links de uma vez, ou um arquivo `.txt` com um link por linha
-- Arquivos de vídeo/áudio locais também são aceitos (sem download)
-- Saída em texto puro, legenda `.srt` ou `.json` com tempos de cada trecho
-- Nomes de arquivo seguros gerados a partir do título do vídeo
-- Progresso no terminal e resumo final com sucessos e falhas; um link com erro não interrompe os demais
-- **Aplicativo com interface gráfica**: cole o link, acompanhe a barra de progresso e leia a transcrição na própria janela
-- Tudo roda na sua máquina: nenhum áudio é enviado para serviços externos
+- **Desktop app**: paste a link, watch the progress bar, read the transcript right in the window
+- Plain text or **with timestamps**; copy it with one click or save it as `.txt`, `.srt` or `.json`
+- Works with links **and** local video/audio files
+- Automatic language detection (or pick one), several quality levels
+- **Private by design**: everything runs on your computer, and the app saves nothing unless you ask
+- **CLI** for batches: many links at once or a `.txt` file with one link per line; a failing link doesn't stop the others
 
-## Requisitos
+## Download (Windows)
 
-- **Python 3.10+**
-- **ffmpeg** (usado para extrair o áudio dos vídeos baixados)
+1. Go to the **[latest release](https://github.com/coqueiroz/video-transcriber/releases/latest)**.
+2. Download **`VideoTranscriber-Setup-x.y.z.exe`** and run it. No admin rights are needed, and nothing else has to be installed.
+   Prefer not to install? Use the **`…-windows-portable.zip`**: unzip it and run `VideoTranscriber.exe`.
+3. Open **Video Transcriber** from the Start menu.
 
-| Sistema | Instalação do ffmpeg |
-|---|---|
-| Windows | `winget install Gyan.FFmpeg` (ou `choco install ffmpeg`) |
-| macOS | `brew install ffmpeg` |
-| Linux (Debian/Ubuntu) | `sudo apt install ffmpeg` |
-| Linux (Fedora) | `sudo dnf install ffmpeg` |
+> The executable isn't code-signed, so Windows SmartScreen may show *"Windows protected your PC"*. Click **More info → Run anyway**.
 
-Confirme com `ffmpeg -version`. No Windows, abra um novo terminal depois de instalar.
+## macOS (and running from source)
 
-> Para transcrever apenas arquivos locais o ffmpeg não é obrigatório: o faster-whisper decodifica o áudio sozinho.
-
-## Instalação
+Requires **Python 3.10+**.
 
 ```bash
 git clone https://github.com/coqueiroz/video-transcriber.git
 cd video-transcriber
-
-python -m venv .venv
-# Linux/macOS:
-source .venv/bin/activate
-# Windows (PowerShell):
-# .venv\Scripts\Activate.ps1
-
-pip install -e .
-```
-
-Pronto: o comando `transcrever` fica disponível enquanto o ambiente virtual estiver ativo.
-
-> Na primeira execução o modelo do Whisper é baixado automaticamente (de ~75 MB a ~3 GB, conforme o modelo) e fica em cache.
-
-## Aplicativo (interface gráfica)
-
-Prefere não usar o terminal? O projeto inclui uma janela simples: cole o link, clique em
-**Transcrever**, acompanhe a porcentagem e leia (ou copie) o texto quando chegar a 100%.
-Também dá para escolher um arquivo do computador.
-
-A janela **não salva nada automaticamente**: a transcrição aparece só na tela. Se quiser
-guardá-la, use **Salvar…** e escolha o formato (.txt, .srt ou .json) e onde gravar.
-
-```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[app]"
-transcrever-app
+video-transcriber-app              # opens the desktop app
 ```
 
-**No macOS, como um programa de verdade** (ícone no Launchpad, Spotlight e Dock):
+**On macOS, install it as a real app** (Launchpad, Spotlight and Dock icon):
 
 ```bash
-./scripts/criar_app_macos.sh
+./scripts/create_macos_app.sh
 ```
 
-O script cria `~/Applications/Video Transcriber.app`. O app usa o ambiente virtual do projeto,
-então mantenha a pasta do projeto onde está (se movê-la, recrie o `.venv` e rode o script de novo).
-Em caso de erro, veja o log em `~/Library/Logs/VideoTranscriber.log`.
+This creates `~/Applications/Video Transcriber.app`. The app uses the project's virtual environment, so keep the project folder where it is (if you move it, recreate `.venv` and run the script again). Logs go to `~/Library/Logs/VideoTranscriber.log`.
 
-## Uso pelo terminal
+> The first time you use each quality level, its Whisper model is downloaded (≈145 MB to ≈3 GB) and cached for later.
+
+## Using the app
+
+1. Copy a video link and click **Paste** (or right-click the field → *Paste*, or Ctrl/⌘+V).
+2. Choose the **Language** (or leave *Auto-detect*) and the **Quality**.
+3. Click **Transcribe** and follow the percentage.
+4. When it reaches 100%, the transcript appears below. Switch between **Text** and **With timestamps**, **Copy text**, or **Save…** it as `.txt`, `.srt` (subtitles) or `.json`.
+
+You can also click *or choose a file from your computer* to transcribe a local video or audio file.
+
+## Command line
+
+The CLI writes the results to files (default folder: `./transcriptions`).
 
 ```bash
-# Um link
-transcrever "https://www.youtube.com/watch?v=VIDEO_ID"
+# One link
+video-transcriber "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# Vários links
-transcrever "https://www.tiktok.com/@usuario/video/123" "https://www.instagram.com/reel/abc/"
+# Several links
+video-transcriber "https://www.tiktok.com/@user/video/123" "https://www.instagram.com/reel/abc/"
 
-# Arquivo .txt com um link por linha (linhas vazias e iniciadas por # são ignoradas)
-transcrever --arquivo links.txt
+# A .txt file with one link per line (blank lines and lines starting with # are ignored)
+video-transcriber --file links.txt
 
-# Arquivo local (vídeo ou áudio)
-transcrever ~/Videos/aula.mp4
+# A local file (video or audio)
+video-transcriber ~/Videos/lecture.mp4
 
-# Legenda .srt em português com um modelo mais preciso
-transcrever "https://youtu.be/VIDEO_ID" --idioma pt --formato srt --modelo medium
+# Portuguese .srt subtitles with a more accurate model
+video-transcriber "https://youtu.be/VIDEO_ID" --language pt --format srt --model medium
 
-# Todos os formatos, em outra pasta, guardando o áudio baixado
-transcrever --arquivo links.txt --formato todos --saida minhas_transcricoes --manter-audio
+# Every format, another folder, keeping the downloaded audio
+video-transcriber --file links.txt --format all --output my_transcripts --keep-audio
 ```
 
-### Opções
-
-| Opção | Padrão | Descrição |
+| Option | Default | Description |
 |---|---|---|
-| `--arquivo`, `-a` | — | Arquivo `.txt` com um link por linha |
-| `--modelo`, `-m` | `small` | `tiny`, `base`, `small`, `medium` ou `large-v3` |
-| `--idioma`, `-i` | automático | Código do idioma, ex.: `pt`, `en`, `es` |
-| `--formato`, `-f` | `txt` | `txt`, `srt`, `json` ou `todos` |
-| `--saida`, `-o` | `./transcricoes` | Pasta onde os arquivos são salvos |
-| `--dispositivo`, `-d` | `auto` | `cpu`, `cuda` ou `auto` (usa GPU NVIDIA se houver) |
-| `--manter-audio` | desligado | Mantém o áudio baixado na pasta de saída |
-| `--verbose`, `-v` | desligado | Logs detalhados (útil para investigar erros) |
+| `--file`, `-a` | — | Text file with one link per line |
+| `--model`, `-m` | `small` | `tiny`, `base`, `small`, `medium` or `large-v3` |
+| `--language`, `-l` | auto-detect | Language code, e.g. `en`, `pt`, `es` |
+| `--format`, `-f` | `txt` | `txt`, `srt`, `json` or `all` |
+| `--output`, `-o` | `./transcriptions` | Folder where files are written |
+| `--device`, `-d` | `auto` | `cpu`, `cuda` or `auto` (uses an NVIDIA GPU if available) |
+| `--keep-audio` | off | Keep the downloaded audio in the output folder |
+| `--verbose`, `-v` | off | Detailed logs (useful when something fails) |
 
-O comando termina com código `1` se alguma entrada falhar, o que facilita o uso em scripts.
+The command exits with code `1` if any input fails, which makes it script-friendly. The original Portuguese names (`transcrever`, `--arquivo`, `--idioma`, `--formato`, `--saida`, `--manter-audio`…) still work as aliases.
 
-## Qual modelo escolher?
+**ffmpeg is optional.** Without it, downloads keep their original audio format (m4a/webm/mp4), which transcribes just fine. Install it if you want downloads converted to mp3 (handy with `--keep-audio`): `winget install Gyan.FFmpeg` (Windows), `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Linux).
 
-| Modelo | Tamanho | Velocidade | Precisão | Indicado para |
-|---|---|---|---|---|
-| `tiny` | ~75 MB | ⚡⚡⚡⚡⚡ | ★☆☆☆☆ | Testes rápidos, áudio muito limpo |
-| `base` | ~145 MB | ⚡⚡⚡⚡ | ★★☆☆☆ | Rascunhos rápidos |
-| `small` | ~485 MB | ⚡⚡⚡ | ★★★☆☆ | **Padrão**: bom equilíbrio em CPU |
-| `medium` | ~1,5 GB | ⚡⚡ | ★★★★☆ | Áudio com ruído, sotaques, termos técnicos |
-| `large-v3` | ~3 GB | ⚡ | ★★★★★ | Máxima qualidade (ideal com GPU) |
+## Which model should I pick?
 
-Em CPU o modelo roda em `int8`; com GPU NVIDIA (`cuda`), em `float16`. Informar `--idioma` evita erros de detecção em vídeos curtos.
+| Model | App label | Size | Speed | Accuracy | Good for |
+|---|---|---|---|---|---|
+| `tiny` | — | ~75 MB | ⚡⚡⚡⚡⚡ | ★☆☆☆☆ | Quick tests, very clean audio |
+| `base` | Fast | ~145 MB | ⚡⚡⚡⚡ | ★★☆☆☆ | Fast drafts |
+| `small` | Balanced | ~485 MB | ⚡⚡⚡ | ★★★☆☆ | **Default** — good balance on a CPU |
+| `medium` | High | ~1.5 GB | ⚡⚡ | ★★★★☆ | Noisy audio, accents, technical terms |
+| `large-v3` | Best | ~3 GB | ⚡ | ★★★★★ | Maximum quality (ideally with a GPU) |
 
-## Desenvolvimento
+On a CPU the model runs in `int8`; on an NVIDIA GPU (`cuda`) in `float16`. Setting the language avoids detection mistakes on short videos.
+
+## Development
 
 ```bash
 pip install -e ".[dev,app]"
@@ -137,44 +123,39 @@ ruff check .
 pytest
 ```
 
-Estrutura:
+**The Windows app is built on GitHub Actions** ([`build-windows.yml`](.github/workflows/build-windows.yml)): pushing a tag like `v0.3.0` builds the executable with PyInstaller, creates the installer with Inno Setup, installs it and runs a real transcription as a self-test, then attaches both files to the GitHub release. It can also be started manually from the *Actions* tab. To build locally on Windows:
+
+```bash
+pip install ".[app,build]"
+pyinstaller packaging/video_transcriber.spec --noconfirm
+iscc /DAppVersion=0.3.0 packaging\installer.iss
+```
+
+Project layout:
 
 ```
 src/video_transcriber/
-├── cli.py          # interface de terminal (typer + rich)
-├── gui.py          # interface gráfica (pywebview)
-├── web/            # HTML/CSS/JS da janela
-├── pipeline.py     # fluxo compartilhado: obter áudio → transcrever → salvar
-├── downloader.py   # download do áudio com yt-dlp
-├── transcriber.py  # transcrição com faster-whisper
-└── formatters.py   # geração de txt/srt/json e nomes de arquivo seguros
+├── cli.py          # command-line interface (typer + rich)
+├── gui.py          # desktop app backend (pywebview)
+├── web/            # the app's HTML/CSS/JS
+├── pipeline.py     # shared flow: get audio → transcribe → (optionally) save
+├── downloader.py   # audio download with yt-dlp
+├── transcriber.py  # speech-to-text with faster-whisper
+└── formatters.py   # txt/srt/json output and safe filenames
+packaging/          # PyInstaller recipe and Inno Setup installer script
+scripts/            # macOS .app builder
 ```
 
-## Aviso legal
+## Legal notice
 
-Esta ferramenta foi criada para **uso pessoal e educacional** (estudo, acessibilidade, anotações).
+This tool is meant for **personal and educational use** (studying, accessibility, note-taking).
 
-- Respeite os **termos de uso** de cada plataforma (YouTube, TikTok, Instagram etc.).
-- Respeite os **direitos autorais** dos criadores de conteúdo.
-- **Não redistribua** transcrições, legendas ou áudios de conteúdo de terceiros sem autorização.
+- Respect the **terms of service** of each platform (YouTube, TikTok, Instagram, etc.).
+- Respect the **copyright** of content creators.
+- **Do not redistribute** transcripts, subtitles or audio of third-party content without permission.
 
-Os autores não se responsabilizam pelo uso indevido do software.
+The authors are not responsible for misuse of this software.
 
-## Licença
+## License
 
 [MIT](LICENSE)
-
----
-
-## English
-
-**video-transcriber** is a command-line tool that downloads the audio from videos (YouTube, TikTok, Instagram and any site supported by yt-dlp) and transcribes it locally with faster-whisper, producing `.txt`, `.srt` or `.json` files.
-
-```bash
-pip install -e .
-transcrever "https://youtu.be/VIDEO_ID" --idioma en --formato srt
-transcrever --arquivo links.txt --formato todos
-transcrever-app   # desktop window (pip install -e ".[app]")
-```
-
-Requires Python 3.10+ and ffmpeg. Intended for personal and educational use only: respect each platform's terms of service and creators' copyrights, and do not redistribute third-party content.

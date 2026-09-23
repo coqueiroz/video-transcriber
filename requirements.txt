@@ -3,9 +3,9 @@ faster-whisper>=1.0.3
 typer>=0.12
 rich>=13.7
 
-# interface gráfica (opcional)
+# desktop app (optional)
 pywebview>=5
 
-# desenvolvimento
+# development
 pytest>=8
 ruff>=0.6

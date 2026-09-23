@@ -1,37 +1,60 @@
-"""Interface gráfica (janela nativa com pywebview) — comando `transcrever-app`."""
+"""Desktop app (native window via pywebview) — `video-transcriber-app` command."""
 
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import subprocess
 import sys
+import tempfile
 import threading
+import wave
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from video_transcriber import downloader, formatters, pipeline, transcriber
+from video_transcriber import __version__, downloader, formatters, pipeline, transcriber
 
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).parent / "web"
 APP_NAME = "Video Transcriber"
+IS_WINDOWS = platform.system() == "Windows"
+IS_MACOS = platform.system() == "Darwin"
 
-# Faixas da barra de progresso (em %) para cada etapa.
+# Progress bar ranges (in %) for each stage.
 MODEL_END = 5.0
 DOWNLOAD_END = 40.0
-CONVERT_END = 45.0
 
-FFMPEG_MESSAGE = (
-    "O ffmpeg não está instalado, e ele é necessário para baixar vídeos. "
-    "No Mac, instale pelo Terminal com: brew install ffmpeg"
-)
+KNOWN_ERRORS = {
+    "incompatible architecture": (
+        "The app was opened in Intel (Rosetta) mode. Rebuild it with "
+        "./scripts/create_macos_app.sh and open it again."
+    ),
+    "Unsupported URL": "This link is not from a supported site.",
+    "Private video": "This video is private.",
+    "Video unavailable": "This video is not available.",
+    "Sign in to confirm": "The platform asked for a login to allow this video.",
+    "HTTP Error 404": "Video not found (error 404). Check the link.",
+    "Unable to download": "Could not download the video. Check the link and your connection.",
+}
+MAX_ERROR_LENGTH = 220
+
+
+def log_path() -> Path:
+    """Where the app writes its log file on each operating system."""
+    if IS_MACOS:
+        return Path.home() / "Library" / "Logs" / "VideoTranscriber.log"
+    if IS_WINDOWS:
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "VideoTranscriber" / "VideoTranscriber.log"
+    return Path.home() / ".local" / "state" / "video-transcriber" / "VideoTranscriber.log"
 
 
 @dataclass
 class JobState:
-    """Estado da transcrição atual, lido periodicamente pela interface."""
+    """State of the current transcription, polled by the UI."""
 
     status: str = "idle"  # idle | running | done | error
     percent: float = 0.0
@@ -42,7 +65,7 @@ class JobState:
 
 
 def transcription_payload(job: pipeline.JobResult) -> dict[str, Any]:
-    """Dados da transcrição pronta, no formato consumido pelo JavaScript."""
+    """Finished transcription in the shape consumed by the JavaScript side."""
     t = job.transcription
     return {
         "title": job.title,
@@ -57,49 +80,47 @@ def transcription_payload(job: pipeline.JobResult) -> dict[str, Any]:
     }
 
 
+def _run_quiet(command: list[str], data: bytes | None = None) -> bytes:
+    """Run a helper command without flashing a console window on Windows."""
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WINDOWS else 0
+    result = subprocess.run(
+        command, input=data, capture_output=True, check=True, creationflags=flags
+    )
+    return result.stdout
+
+
 def copy_to_clipboard(text: str) -> bool:
-    """Copia texto para a área de transferência usando ferramentas do sistema."""
-    commands = {"Darwin": ["pbcopy"], "Windows": ["clip"]}
-    command = commands.get(platform.system(), ["xclip", "-selection", "clipboard"])
+    """Copy text to the clipboard using system tools."""
+    if IS_MACOS:
+        command, data = ["pbcopy"], text.encode("utf-8")
+    elif IS_WINDOWS:
+        command, data = ["clip"], text.encode("utf-16")  # clip.exe expects UTF-16 with BOM
+    else:
+        command, data = ["xclip", "-selection", "clipboard"], text.encode("utf-8")
     try:
-        subprocess.run(command, input=text.encode("utf-8"), check=True)
+        _run_quiet(command, data)
     except (OSError, subprocess.CalledProcessError):
         return False
     return True
 
 
 def read_clipboard() -> str:
-    """Lê o texto da área de transferência usando ferramentas do sistema."""
-    commands = {
-        "Darwin": ["pbpaste"],
-        "Windows": ["powershell", "-NoProfile", "-Command", "Get-Clipboard"],
-    }
-    command = commands.get(platform.system(), ["xclip", "-selection", "clipboard", "-o"])
+    """Read text from the clipboard using system tools."""
+    if IS_MACOS:
+        command = ["pbpaste"]
+    elif IS_WINDOWS:
+        script = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Raw"
+        command = ["powershell", "-NoProfile", "-Command", script]
+    else:
+        command = ["xclip", "-selection", "clipboard", "-o"]
     try:
-        result = subprocess.run(command, capture_output=True, check=True)
+        return _run_quiet(command).decode("utf-8", errors="replace").strip()
     except (OSError, subprocess.CalledProcessError):
         return ""
-    return result.stdout.decode("utf-8", errors="replace").strip()
-
-
-KNOWN_ERRORS = {
-    "incompatible architecture": (
-        "O app foi aberto no modo Intel (Rosetta). Recrie o app com "
-        "./scripts/criar_app_macos.sh e abra de novo."
-    ),
-    "Unsupported URL": "Esse link não é de um site suportado.",
-    "Private video": "Esse vídeo é privado.",
-    "Video unavailable": "Esse vídeo não está disponível.",
-    "Sign in to confirm": "A plataforma pediu login para liberar esse vídeo.",
-    "HTTP Error 404": "Vídeo não encontrado (erro 404). Confira o link.",
-    "Unable to download": "Não foi possível baixar o vídeo. Confira o link e a internet.",
-}
-MAX_ERROR_LENGTH = 220
-LOG_HINT = "Detalhes em ~/Library/Logs/VideoTranscriber.log"
 
 
 def friendly_error(exc: BaseException) -> str:
-    """Resume uma exceção em uma mensagem curta para a interface."""
+    """Summarize an exception as a short message for the UI."""
     raw = str(exc).removeprefix("ERROR: ").strip() or type(exc).__name__
     for pattern, message in KNOWN_ERRORS.items():
         if pattern.lower() in raw.lower():
@@ -107,13 +128,13 @@ def friendly_error(exc: BaseException) -> str:
     first_line = raw.splitlines()[0]
     if len(first_line) > MAX_ERROR_LENGTH:
         first_line = first_line[: MAX_ERROR_LENGTH - 1].rstrip() + "…"
-    return f"{first_line} ({LOG_HINT})"
+    return f"{first_line} (details in {log_path()})"
 
 
 class Api:
-    """Métodos expostos ao JavaScript como `window.pywebview.api.*`.
+    """Methods exposed to JavaScript as `window.pywebview.api.*`.
 
-    Atributos privados (com "_") não são expostos pelo pywebview.
+    Private attributes (starting with "_") are not exposed by pywebview.
     """
 
     def __init__(self, device: str = "auto") -> None:
@@ -124,53 +145,54 @@ class Api:
         self._models: dict[str, Any] = {}
         self._window: Any = None
 
-    # --- chamados pelo JavaScript -------------------------------------------------
+    # --- called from JavaScript ----------------------------------------------------
 
-    def start(self, entrada: str, idioma: str = "auto", modelo: str = "small") -> dict[str, Any]:
-        """Inicia uma transcrição em segundo plano."""
-        entrada = (entrada or "").strip()
-        if not entrada:
-            return {"ok": False, "error": "Cole um link ou escolha um arquivo."}
-        if modelo not in transcriber.MODELS:
-            return {"ok": False, "error": f"Modelo inválido: {modelo}"}
-        is_local = Path(entrada).expanduser().is_file()
-        if not is_local and not downloader.is_url(entrada):
-            return {"ok": False, "error": "Isso não parece um link (deve começar com https://)."}
-        if not is_local and not downloader.ffmpeg_available():
-            return {"ok": False, "error": FFMPEG_MESSAGE}
+    def start(self, source: str, language: str = "auto", model: str = "small") -> dict[str, Any]:
+        """Start a transcription in the background."""
+        source = (source or "").strip()
+        if not source:
+            return {"ok": False, "error": "Paste a link or choose a file."}
+        if model not in transcriber.MODELS:
+            return {"ok": False, "error": f"Invalid model: {model}"}
+        is_local = Path(source).expanduser().is_file()
+        if not is_local and not downloader.is_url(source):
+            return {
+                "ok": False,
+                "error": "That doesn't look like a link (it should start with https://).",
+            }
 
         with self._lock:
             if self._state.status == "running":
-                return {"ok": False, "error": "Já existe uma transcrição em andamento."}
-            self._state = JobState(status="running", stage="Preparando...")
+                return {"ok": False, "error": "A transcription is already running."}
+            self._state = JobState(status="running", stage="Preparing...")
 
-        language = None if idioma in ("", "auto") else idioma
-        thread = threading.Thread(target=self._run, args=(entrada, language, modelo), daemon=True)
+        lang = None if language in ("", "auto") else language
+        thread = threading.Thread(target=self._run, args=(source, lang, model), daemon=True)
         thread.start()
         return {"ok": True}
 
     def status(self) -> dict[str, Any]:
-        """Estado atual (consultado pela interface várias vezes por segundo)."""
+        """Current state (polled by the UI several times per second)."""
         with self._lock:
             return asdict(self._state)
 
     def pick_file(self) -> str | None:
-        """Abre o seletor de arquivos e devolve o caminho escolhido."""
+        """Open the file picker and return the chosen path."""
         if self._window is None:
             return None
         import webview
 
-        types = ("Vídeo ou áudio (*.mp4;*.mov;*.mkv;*.webm;*.mp3;*.m4a;*.wav;*.ogg;*.flac)",)
+        types = ("Video or audio (*.mp4;*.mov;*.mkv;*.webm;*.mp3;*.m4a;*.wav;*.ogg;*.flac)",)
         chosen = self._window.create_file_dialog(webview.FileDialog.OPEN, file_types=types)
         return chosen[0] if chosen else None
 
     def save(self, fmt: str) -> dict[str, Any]:
-        """Salva a última transcrição onde o usuário escolher (nada é salvo sozinho)."""
+        """Save the last transcription wherever the user chooses (nothing is saved on its own)."""
         job = self._last_job
         if job is None:
-            return {"ok": False, "error": "Nenhuma transcrição para salvar."}
+            return {"ok": False, "error": "There is no transcription to save."}
         if fmt not in formatters.FORMATTERS:
-            return {"ok": False, "error": f"Formato inválido: {fmt}"}
+            return {"ok": False, "error": f"Invalid format: {fmt}"}
         path = self._ask_save_path(f"{formatters.sanitize_filename(job.title)}.{fmt}", fmt)
         if path is None:
             return {"ok": False, "cancelled": True}
@@ -180,22 +202,22 @@ class Api:
         try:
             path.write_text(content, encoding="utf-8")
         except OSError as exc:
-            logger.exception("Falha ao salvar %s", path)
-            return {"ok": False, "error": f"Não foi possível salvar: {exc.strerror or exc}"}
+            logger.exception("Failed to save %s", path)
+            return {"ok": False, "error": f"Could not save: {exc.strerror or exc}"}
         return {"ok": True, "path": str(path)}
 
     def copy(self, text: str) -> bool:
-        """Copia o texto para a área de transferência."""
+        """Copy text to the clipboard."""
         return copy_to_clipboard(text)
 
     def paste(self) -> str:
-        """Devolve o texto da área de transferência (para o botão e o menu "Colar")."""
+        """Return the clipboard text (for the "Paste" button and menu)."""
         return read_clipboard()
 
-    # --- execução em segundo plano -------------------------------------------------
+    # --- background work ----------------------------------------------------------
 
     def _ask_save_path(self, suggested_name: str, fmt: str) -> Path | None:
-        """Abre o diálogo "Salvar como" e devolve o caminho escolhido."""
+        """Open the "Save as" dialog and return the chosen path."""
         if self._window is None:
             return None
         import webview
@@ -224,48 +246,48 @@ class Api:
             total = status.get("total_bytes") or status.get("total_bytes_estimate")
             fraction = min(1.0, status.get("downloaded_bytes", 0) / total) if total else 0.0
             percent = MODEL_END + fraction * (DOWNLOAD_END - MODEL_END)
-            self._update(stage="Baixando o áudio do vídeo...", percent=percent)
+            self._update(stage="Downloading the video's audio...", percent=percent)
         elif status.get("status") == "finished":
-            self._update(stage="Convertendo o áudio...", percent=DOWNLOAD_END)
+            self._update(stage="Processing the audio...", percent=DOWNLOAD_END)
 
     def _on_source(self, source: downloader.AudioSource) -> None:
-        start = CONVERT_END if source.is_temporary else MODEL_END
-        self._update(title=source.title, stage="Transcrevendo...", percent=start)
+        start = DOWNLOAD_END if source.is_temporary else MODEL_END
+        self._update(title=source.title, stage="Transcribing...", percent=start)
 
     def _on_progress(self, done: float, total: float, start: float) -> None:
         fraction = min(1.0, done / total) if total else 1.0
         self._update(percent=start + fraction * (99.0 - start))
 
-    def _run(self, entrada: str, language: str | None, modelo: str) -> None:
+    def _run(self, source: str, language: str | None, model_name: str) -> None:
         try:
-            if modelo not in self._models:
-                self._update(stage="Carregando o modelo (na primeira vez ele é baixado)...")
-            model = self._get_model(modelo)
-            self._update(stage="Obtendo o áudio...", percent=MODEL_END)
+            if model_name not in self._models:
+                self._update(stage="Loading the model (downloaded the first time)...")
+            model = self._get_model(model_name)
+            self._update(stage="Getting the audio...", percent=MODEL_END)
             self._last_job = None
 
-            is_local = Path(entrada).expanduser().is_file()
-            start = MODEL_END if is_local else CONVERT_END
+            is_local = Path(source).expanduser().is_file()
+            start = MODEL_END if is_local else DOWNLOAD_END
             job = pipeline.run_job(
-                entrada,
+                source,
                 model,
                 language=language,
+                # faster-whisper decodes m4a/webm/mp4 by itself: no ffmpeg needed.
+                extract_audio=False,
                 download_hook=self._download_hook,
                 on_source=self._on_source,
                 on_progress=lambda done, total: self._on_progress(done, total, start),
             )
-        except Exception as exc:  # noqa: BLE001 - qualquer erro vira mensagem na tela
-            logger.exception("Falha ao transcrever %s", entrada)
+        except Exception as exc:  # noqa: BLE001 - any error becomes a message on screen
+            logger.exception("Failed to transcribe %s", source)
             self._update(status="error", error=friendly_error(exc), stage="")
             return
         self._last_job = job
-        self._update(
-            status="done", percent=100.0, stage="Pronto!", result=transcription_payload(job)
-        )
+        self._update(status="done", percent=100.0, stage="Done!", result=transcription_payload(job))
 
 
 def _set_macos_app_identity(icon: Path) -> None:
-    """No macOS, troca o nome "Python" e o ícone do foguete pelos do app."""
+    """On macOS, replace the "Python" name and rocket icon with the app's own."""
     try:
         from AppKit import NSApplication, NSImage
         from Foundation import NSBundle
@@ -275,19 +297,62 @@ def _set_macos_app_identity(icon: Path) -> None:
         if icon.exists():
             image = NSImage.alloc().initWithContentsOfFile_(str(icon))
             NSApplication.sharedApplication().setApplicationIconImage_(image)
-    except Exception:  # noqa: BLE001 - puramente cosmético
-        logger.debug("Não foi possível ajustar nome/ícone do app", exc_info=True)
+    except Exception:  # noqa: BLE001 - purely cosmetic
+        logger.debug("Could not set the app name/icon", exc_info=True)
+
+
+def setup_logging() -> None:
+    """Log to a file; in windowed builds (no console) also route stdout/stderr there."""
+    path = log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if sys.stdout is None or sys.stderr is None:
+        stream = open(path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+        sys.stdout = sys.stdout or stream
+        sys.stderr = sys.stderr or stream
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(asctime)s %(name)s: %(message)s",
+        handlers=[logging.FileHandler(path, encoding="utf-8")],
+        force=True,
+    )
+    logging.captureWarnings(True)
+
+
+def self_test() -> int:
+    """Check that every native dependency loads and a real transcription runs.
+
+    Used by CI to validate the packaged Windows build: `VideoTranscriber.exe --self-test`.
+    """
+    import av  # noqa: F401
+    import ctranslate2  # noqa: F401
+    import webview  # noqa: F401
+    import yt_dlp  # noqa: F401
+
+    with tempfile.TemporaryDirectory() as tmp:
+        audio = Path(tmp) / "silence.wav"
+        with wave.open(str(audio), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(16000)
+            wav.writeframes(b"\x00\x00" * 16000)
+        model = transcriber.load_model("tiny", "cpu")
+        result = transcriber.transcribe(model, audio)
+    print(f"self-test ok: {APP_NAME} {__version__}, audio {result.duration:.1f}s")
+    return 0
 
 
 def main() -> None:
-    """Abre a janela do Video Transcriber."""
-    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s: %(message)s")
+    """Open the Video Transcriber window."""
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    setup_logging()
+    if "--self-test" in sys.argv:
+        sys.exit(self_test())
     try:
         import webview
     except ImportError:
-        sys.exit('pywebview não instalado. Rode: pip install -e ".[app]"')
+        sys.exit('pywebview is not installed. Run: pip install -e ".[app]"')
 
-    if platform.system() == "Darwin":
+    if IS_MACOS:
         _set_macos_app_identity(WEB_DIR / "icon.png")
 
     api = Api()

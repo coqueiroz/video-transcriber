@@ -1,4 +1,4 @@
-"""Testes do downloader com yt-dlp mockado."""
+"""Downloader tests with yt-dlp mocked."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from video_transcriber import downloader
 
 
 class FakeYDL:
-    """Substituto de yt_dlp.YoutubeDL que cria um arquivo falso."""
+    """Stand-in for yt_dlp.YoutubeDL that creates a fake file."""
 
     last_options: dict = {}
 
@@ -30,7 +30,7 @@ class FakeYDL:
         path.write_bytes(b"fake audio")
         return {
             "id": "abc123",
-            "title": "Meu vídeo",
+            "title": "My video",
             "requested_downloads": [{"filepath": str(path)}],
         }
 
@@ -42,7 +42,7 @@ class FakeYDL:
         ("HTTP://tiktok.com/@a/video/1", True),
         ("  https://instagram.com/reel/x  ", True),
         ("video.mp4", False),
-        ("ftp://exemplo.com/a", False),
+        ("ftp://example.com/a", False),
         ("", False),
     ],
 )
@@ -58,10 +58,10 @@ def test_ffmpeg_available(monkeypatch) -> None:
 
 
 def test_local_source(tmp_path) -> None:
-    file = tmp_path / "aula 01.mp4"
+    file = tmp_path / "lecture 01.mp4"
     file.write_bytes(b"x")
     source = downloader.local_source(file)
-    assert source.title == "aula 01"
+    assert source.title == "lecture 01"
     assert source.path == file
     assert source.is_temporary is False
 
@@ -75,13 +75,31 @@ def test_build_options_audio_only(tmp_path) -> None:
     assert options["progress_hooks"] == [hook]
 
 
+def test_build_options_without_ffmpeg(tmp_path) -> None:
+    options = downloader.build_options(tmp_path, extract_audio=False)
+    assert "postprocessors" not in options
+    assert options["format"] == "bestaudio/best"
+
+
 def test_download_audio(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(downloader.yt_dlp, "YoutubeDL", FakeYDL)
     source = downloader.download_audio("https://youtu.be/abc123", tmp_path / "tmp")
-    assert source.title == "Meu vídeo"
+    assert source.title == "My video"
     assert source.path.read_bytes() == b"fake audio"
     assert source.is_temporary is True
     assert source.origin == "https://youtu.be/abc123"
+
+
+def test_download_audio_without_conversion_uses_original_ext(monkeypatch, tmp_path) -> None:
+    class NoRequestedDownloads(FakeYDL):
+        def extract_info(self, url: str, download: bool = True) -> dict:
+            (self.dest / "vid.m4a").write_bytes(b"x")
+            return {"id": "vid", "ext": "m4a", "title": "t"}
+
+    monkeypatch.setattr(downloader.yt_dlp, "YoutubeDL", NoRequestedDownloads)
+    source = downloader.download_audio("https://youtu.be/vid", tmp_path, extract_audio=False)
+    assert source.path.name == "vid.m4a"
+    assert "postprocessors" not in NoRequestedDownloads.last_options
 
 
 def test_download_audio_wraps_errors(monkeypatch, tmp_path) -> None:
@@ -100,7 +118,7 @@ def test_download_audio_missing_file(monkeypatch, tmp_path) -> None:
             return {"id": "zzz", "title": "t"}
 
     monkeypatch.setattr(downloader.yt_dlp, "YoutubeDL", NoFile)
-    with pytest.raises(downloader.DownloadError, match="não encontrado"):
+    with pytest.raises(downloader.DownloadError, match="not found"):
         downloader.download_audio("https://youtu.be/x", tmp_path)
 
 

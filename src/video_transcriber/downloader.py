@@ -1,4 +1,4 @@
-"""Download de áudio com yt-dlp e tratamento de arquivos locais."""
+"""Audio download with yt-dlp and handling of local files."""
 
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class DownloadError(RuntimeError):
-    """Falha ao baixar ou extrair o áudio de um link."""
+    """Failed to download or extract the audio from a link."""
 
 
 @dataclass
 class AudioSource:
-    """Arquivo de áudio pronto para transcrição."""
+    """Audio (or video) file ready to be transcribed."""
 
     path: Path
     title: str
@@ -33,7 +33,7 @@ class AudioSource:
 
 
 class _YtDlpLogger:
-    """Encaminha mensagens do yt-dlp para o logging (erros são tratados por quem chama)."""
+    """Routes yt-dlp messages to logging (errors are reported by the caller)."""
 
     def debug(self, msg: str) -> None:
         logger.debug(msg)
@@ -49,22 +49,28 @@ class _YtDlpLogger:
 
 
 def ffmpeg_available() -> bool:
-    """Indica se o executável do ffmpeg está no PATH."""
+    """Whether the ffmpeg executable is on the PATH."""
     return shutil.which("ffmpeg") is not None
 
 
 def is_url(value: str) -> bool:
-    """Indica se o texto parece um link http(s)."""
+    """Whether the text looks like an http(s) link."""
     return value.strip().lower().startswith(("http://", "https://"))
 
 
 def local_source(path: Path) -> AudioSource:
-    """Usa um arquivo local existente, sem download."""
+    """Use an existing local file, without downloading anything."""
     return AudioSource(path=path, title=path.stem, origin=str(path), is_temporary=False)
 
 
-def build_options(dest_dir: Path, progress_hook: ProgressHook | None = None) -> dict[str, Any]:
-    """Monta as opções do yt-dlp para baixar apenas o áudio."""
+def build_options(
+    dest_dir: Path, progress_hook: ProgressHook | None = None, extract_audio: bool = True
+) -> dict[str, Any]:
+    """Build yt-dlp options that download only the audio.
+
+    With `extract_audio=False` the file keeps its original container (m4a, webm, mp4...),
+    which faster-whisper decodes on its own, so ffmpeg is not required.
+    """
     options: dict[str, Any] = {
         "format": "bestaudio/best",
         "outtmpl": str(dest_dir / "%(id)s.%(ext)s"),
@@ -74,38 +80,44 @@ def build_options(dest_dir: Path, progress_hook: ProgressHook | None = None) -> 
         "noprogress": True,
         "restrictfilenames": True,
         "logger": _YtDlpLogger(),
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": AUDIO_CODEC, "preferredquality": "128"}
-        ],
     }
+    if extract_audio:
+        options["postprocessors"] = [
+            {"key": "FFmpegExtractAudio", "preferredcodec": AUDIO_CODEC, "preferredquality": "128"}
+        ]
     if progress_hook:
         options["progress_hooks"] = [progress_hook]
     return options
 
 
-def _downloaded_path(info: dict[str, Any], dest_dir: Path) -> Path:
-    """Descobre o caminho final do áudio após o pós-processamento."""
+def _downloaded_path(info: dict[str, Any], dest_dir: Path, extract_audio: bool) -> Path:
+    """Find the final file path after post-processing."""
     for item in info.get("requested_downloads") or []:
         if item.get("filepath"):
             return Path(item["filepath"])
-    return dest_dir / f"{info['id']}.{AUDIO_CODEC}"
+    ext = AUDIO_CODEC if extract_audio else info.get("ext", "")
+    return dest_dir / f"{info['id']}.{ext}"
 
 
 def download_audio(
-    url: str, dest_dir: Path, progress_hook: ProgressHook | None = None
+    url: str,
+    dest_dir: Path,
+    progress_hook: ProgressHook | None = None,
+    extract_audio: bool = True,
 ) -> AudioSource:
-    """Baixa o áudio de um link suportado pelo yt-dlp e converte com ffmpeg."""
+    """Download the audio from any link supported by yt-dlp."""
     dest_dir.mkdir(parents=True, exist_ok=True)
+    options = build_options(dest_dir, progress_hook, extract_audio)
     try:
-        with yt_dlp.YoutubeDL(build_options(dest_dir, progress_hook)) as ydl:
+        with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
     except yt_dlp.utils.DownloadError as exc:
         raise DownloadError(str(exc).removeprefix("ERROR: ")) from exc
     if not info:
-        raise DownloadError(f"Nenhuma informação retornada para {url}")
+        raise DownloadError(f"No information returned for {url}")
 
-    path = _downloaded_path(info, dest_dir)
+    path = _downloaded_path(info, dest_dir, extract_audio)
     if not path.exists():
-        raise DownloadError(f"Áudio não encontrado após o download: {path}")
+        raise DownloadError(f"Audio file not found after download: {path}")
     title = info.get("title") or info.get("id") or "audio"
     return AudioSource(path=path, title=title, origin=url, is_temporary=True)

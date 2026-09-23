@@ -1,4 +1,4 @@
-"""Interface de linha de comando (comando `transcrever`)."""
+"""Command-line interface (`video-transcriber`, also available as `transcrever`)."""
 
 from __future__ import annotations
 
@@ -28,18 +28,21 @@ console = Console()
 
 app = typer.Typer(
     add_completion=False,
-    help="Baixa o áudio de vídeos (YouTube, TikTok, Instagram...) e gera a transcrição.",
+    help="Download the audio from videos (YouTube, TikTok, Instagram...) and transcribe it.",
 )
 
-FFMPEG_HELP = """[bold red]ffmpeg não encontrado.[/bold red]
-O ffmpeg é necessário para extrair o áudio dos vídeos baixados. Instale com:
-  • Windows: [cyan]winget install Gyan.FFmpeg[/cyan]  (ou [cyan]choco install ffmpeg[/cyan])
+FFMPEG_WARNING = """[yellow]ffmpeg not found[/yellow] — downloads will keep their original audio \
+format (m4a/webm/mp4), which works fine for transcription.
+To convert downloads to mp3 (e.g. with --keep-audio), install it:
+  • Windows: [cyan]winget install Gyan.FFmpeg[/cyan]
   • macOS:   [cyan]brew install ffmpeg[/cyan]
-  • Linux:   [cyan]sudo apt install ffmpeg[/cyan]  (ou o gerenciador da sua distribuição)
-Depois, abra um novo terminal e confirme com [cyan]ffmpeg -version[/cyan]."""
+  • Linux:   [cyan]sudo apt install ffmpeg[/cyan]"""
+
+FORMAT_ALIASES = {"todos": "all"}
+FORMAT_CHOICES = (*formatters.FORMATTERS, "all")
 
 
-class Modelo(str, Enum):
+class Model(str, Enum):
     tiny = "tiny"
     base = "base"
     small = "small"
@@ -47,14 +50,7 @@ class Modelo(str, Enum):
     large_v3 = "large-v3"
 
 
-class Formato(str, Enum):
-    txt = "txt"
-    srt = "srt"
-    json = "json"
-    todos = "todos"
-
-
-class Dispositivo(str, Enum):
+class Device(str, Enum):
     auto = "auto"
     cpu = "cpu"
     cuda = "cuda"
@@ -62,7 +58,7 @@ class Dispositivo(str, Enum):
 
 @dataclass
 class ItemResult:
-    """Resultado do processamento de uma entrada."""
+    """Result of processing one input."""
 
     source: str
     ok: bool
@@ -71,7 +67,7 @@ class ItemResult:
 
 
 def setup_logging(verbose: bool) -> None:
-    """Configura o logging com saída formatada pelo rich."""
+    """Configure logging with rich formatting."""
     logging.basicConfig(
         level=logging.INFO if verbose else logging.WARNING,
         format="%(message)s",
@@ -83,33 +79,41 @@ def setup_logging(verbose: bool) -> None:
 
 
 def read_links_file(path: Path) -> list[str]:
-    """Lê um arquivo com uma entrada por linha, ignorando linhas vazias e comentários (#)."""
+    """Read one input per line, ignoring blank lines and comments (#)."""
     lines = path.read_text(encoding="utf-8").splitlines()
     return [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
 
 
-def collect_inputs(entradas: list[str] | None, arquivo: Path | None) -> list[str]:
-    """Junta as entradas da linha de comando e do arquivo, sem duplicatas."""
-    items = list(entradas or [])
-    if arquivo:
-        items.extend(read_links_file(arquivo))
+def collect_inputs(inputs: list[str] | None, links_file: Path | None) -> list[str]:
+    """Merge inputs from the command line and the links file, without duplicates."""
+    items = list(inputs or [])
+    if links_file:
+        items.extend(read_links_file(links_file))
     return list(dict.fromkeys(item.strip() for item in items if item.strip()))
 
 
-def expand_formats(formato: Formato) -> list[str]:
-    """Converte a opção --formato em uma lista de extensões."""
-    return list(formatters.FORMATTERS) if formato is Formato.todos else [formato.value]
+def parse_format(value: str) -> str:
+    """Validate --format, accepting the Portuguese alias "todos"."""
+    value = FORMAT_ALIASES.get(value.strip().lower(), value.strip().lower())
+    if value not in FORMAT_CHOICES:
+        raise typer.BadParameter(f"choose one of: {', '.join(FORMAT_CHOICES)}")
+    return value
 
 
-def normalize_language(idioma: str | None) -> str | None:
-    """Trata "auto" (ou vazio) como detecção automática."""
-    if not idioma or idioma.strip().lower() == "auto":
+def expand_formats(fmt: str) -> list[str]:
+    """Turn the --format value into a list of extensions."""
+    return list(formatters.FORMATTERS) if fmt == "all" else [fmt]
+
+
+def normalize_language(language: str | None) -> str | None:
+    """Treat "auto" (or empty) as automatic language detection."""
+    if not language or language.strip().lower() == "auto":
         return None
-    return idioma.strip().lower()
+    return language.strip().lower()
 
 
 def make_progress() -> Progress:
-    """Barra de progresso usada para downloads e transcrições."""
+    """Progress bar used for downloads and transcriptions."""
     return Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -129,21 +133,22 @@ def process_item(
     formats: list[str],
     language: str | None,
     keep: bool,
+    extract_audio: bool = True,
 ) -> ItemResult:
-    """Processa uma entrada mostrando barras de progresso do rich."""
+    """Process one input while showing rich progress bars."""
     with make_progress() as progress:
-        download_task = progress.add_task("Preparando", total=None)
-        transcribe_task = progress.add_task("Transcrevendo", total=None, visible=False)
+        download_task = progress.add_task("Preparing", total=None)
+        transcribe_task = progress.add_task("Transcribing", total=None, visible=False)
 
         def download_hook(status: dict[str, Any]) -> None:
             if status.get("status") == "downloading":
                 total = status.get("total_bytes") or status.get("total_bytes_estimate")
                 done = status.get("downloaded_bytes", 0)
                 progress.update(
-                    download_task, description="Baixando áudio", completed=done, total=total
+                    download_task, description="Downloading audio", completed=done, total=total
                 )
             elif status.get("status") == "finished":
-                progress.update(download_task, description="Convertendo com ffmpeg")
+                progress.update(download_task, description="Processing audio")
 
         def on_source(source: downloader.AudioSource) -> None:
             progress.update(download_task, visible=False)
@@ -157,6 +162,7 @@ def process_item(
             formats=formats,
             language=language,
             keep=keep,
+            extract_audio=extract_audio,
             download_hook=download_hook,
             on_source=on_source,
             on_progress=lambda done, total: progress.update(
@@ -167,21 +173,21 @@ def process_item(
 
 
 def print_summary(results: list[ItemResult]) -> None:
-    """Mostra a tabela final com sucessos e falhas."""
-    table = Table(title="Resumo", show_lines=True)
-    table.add_column("Entrada", overflow="fold")
+    """Print the final table of successes and failures."""
+    table = Table(title="Summary", show_lines=True)
+    table.add_column("Input", overflow="fold")
     table.add_column("Status", justify="center")
-    table.add_column("Arquivos / erro", overflow="fold")
+    table.add_column("Files / error", overflow="fold")
     for res in results:
         if res.ok:
             files = "\n".join(str(p) for p in res.outputs)
             table.add_row(escape(res.source), "[green]✓ ok[/green]", escape(files))
         else:
-            table.add_row(escape(res.source), "[red]✗ falhou[/red]", escape(res.error))
+            table.add_row(escape(res.source), "[red]✗ failed[/red]", escape(res.error))
     console.print(table)
 
     ok = sum(r.ok for r in results)
-    console.print(f"[green]{ok} sucesso(s)[/green] · [red]{len(results) - ok} falha(s)[/red]")
+    console.print(f"[green]{ok} succeeded[/green] · [red]{len(results) - ok} failed[/red]")
 
 
 def version_callback(value: bool) -> None:
@@ -192,79 +198,100 @@ def version_callback(value: bool) -> None:
 
 @app.command()
 def main(
-    entradas: Annotated[
+    inputs: Annotated[
         list[str] | None,
-        typer.Argument(help="Links de vídeo e/ou caminhos de arquivos locais.", show_default=False),
+        typer.Argument(help="Video links and/or paths to local files.", show_default=False),
     ] = None,
-    arquivo: Annotated[
+    links_file: Annotated[
         Path | None,
         typer.Option(
+            "--file",
             "--arquivo",
             "-a",
-            help="Arquivo .txt com um link por linha.",
+            help="Text file with one link per line.",
             exists=True,
             dir_okay=False,
             readable=True,
         ),
     ] = None,
-    modelo: Annotated[Modelo, typer.Option("--modelo", "-m", help="Modelo do Whisper.")] = (
-        Modelo.small
-    ),
-    idioma: Annotated[
+    model: Annotated[
+        Model, typer.Option("--model", "--modelo", "-m", help="Whisper model.")
+    ] = Model.small,
+    language: Annotated[
         str | None,
-        typer.Option("--idioma", "-i", help='Idioma, ex.: "pt". Padrão: detecção automática.'),
+        typer.Option(
+            "--language",
+            "--idioma",
+            "-l",
+            "-i",
+            help='Language code, e.g. "en" or "pt". Default: auto-detect.',
+        ),
     ] = None,
-    formato: Annotated[Formato, typer.Option("--formato", "-f", help="Formato de saída.")] = (
-        Formato.txt
-    ),
-    saida: Annotated[Path, typer.Option("--saida", "-o", help="Pasta de saída.")] = Path(
-        "transcricoes"
-    ),
-    dispositivo: Annotated[
-        Dispositivo, typer.Option("--dispositivo", "-d", help="Onde rodar o modelo.")
-    ] = Dispositivo.auto,
-    manter_audio: Annotated[
-        bool, typer.Option("--manter-audio", help="Guarda o áudio baixado na pasta de saída.")
+    fmt: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            "--formato",
+            "-f",
+            help="Output format: txt, srt, json or all.",
+            callback=parse_format,
+        ),
+    ] = "txt",
+    output_dir: Annotated[
+        Path, typer.Option("--output", "--saida", "-o", help="Output folder.")
+    ] = Path("transcriptions"),
+    device: Annotated[
+        Device, typer.Option("--device", "--dispositivo", "-d", help="Where to run the model.")
+    ] = Device.auto,
+    keep_audio: Annotated[
+        bool,
+        typer.Option(
+            "--keep-audio", "--manter-audio", help="Keep the downloaded audio in the output folder."
+        ),
     ] = False,
-    verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Mostra logs detalhados.")
-    ] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Show detailed logs.")] = False,
     version: Annotated[
         bool | None,
         typer.Option(
-            "--version", callback=version_callback, is_eager=True, help="Mostra a versão."
+            "--version", callback=version_callback, is_eager=True, help="Show the version."
         ),
     ] = None,
 ) -> None:
-    """Transcreve vídeos a partir de links ou arquivos locais."""
+    """Transcribe videos from links or local files."""
     setup_logging(verbose)
-    items = collect_inputs(entradas, arquivo)
+    items = collect_inputs(inputs, links_file)
     if not items:
-        logger.error("Nenhuma entrada informada. Passe links, arquivos ou use --arquivo links.txt.")
+        logger.error("No input given. Pass links, files, or use --file links.txt.")
         raise typer.Exit(code=2)
 
-    needs_download = any(downloader.is_url(i) for i in items)
-    if needs_download and not downloader.ffmpeg_available():
-        console.print(FFMPEG_HELP)
-        raise typer.Exit(code=1)
+    extract_audio = downloader.ffmpeg_available()
+    if not extract_audio and any(downloader.is_url(i) for i in items):
+        console.print(FFMPEG_WARNING)
 
-    device, compute_type = transcriber.resolve_device(dispositivo.value)
-    status = f"Carregando modelo [bold]{modelo.value}[/bold] ({device}, {compute_type})..."
-    with console.status(status):
-        model = transcriber.load_model(modelo.value, dispositivo.value)
+    resolved, compute_type = transcriber.resolve_device(device.value)
+    with console.status(
+        f"Loading model [bold]{model.value}[/bold] ({resolved}, {compute_type})..."
+    ):
+        whisper = transcriber.load_model(model.value, device.value)
 
-    formats = expand_formats(formato)
-    language = normalize_language(idioma)
+    formats = expand_formats(fmt)
+    lang = normalize_language(language)
     results: list[ItemResult] = []
     for index, item in enumerate(items, start=1):
         console.rule(f"[{index}/{len(items)}] {escape(item)}")
         try:
             result = process_item(
-                item, model, output_dir=saida, formats=formats, language=language, keep=manter_audio
+                item,
+                whisper,
+                output_dir=output_dir,
+                formats=formats,
+                language=lang,
+                keep=keep_audio,
+                extract_audio=extract_audio,
             )
-        except Exception as exc:  # noqa: BLE001 - uma falha não deve parar o lote
-            logger.error("Falha em %s: %s", item, exc)
-            logger.debug("Detalhes do erro", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one failure must not stop the batch
+            logger.error("Failed on %s: %s", item, exc)
+            logger.debug("Error details", exc_info=True)
             result = ItemResult(source=item, ok=False, error=str(exc))
         results.append(result)
 

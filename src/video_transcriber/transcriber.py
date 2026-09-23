@@ -1,4 +1,4 @@
-"""Transcrição de áudio com faster-whisper."""
+"""Speech-to-text with faster-whisper."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ ProgressCallback = Callable[[float, float], None]
 
 @dataclass
 class Segment:
-    """Trecho transcrito com tempos em segundos."""
+    """Transcribed chunk with start/end times in seconds."""
 
     start: float
     end: float
@@ -26,7 +26,7 @@ class Segment:
 
 @dataclass
 class Transcription:
-    """Resultado completo de uma transcrição."""
+    """Full result of a transcription."""
 
     segments: list[Segment] = field(default_factory=list)
     language: str = ""
@@ -35,22 +35,22 @@ class Transcription:
 
     @property
     def text(self) -> str:
-        """Texto completo em um único parágrafo."""
+        """Whole transcript as a single paragraph."""
         return " ".join(s.text.strip() for s in self.segments if s.text.strip())
 
 
 def cuda_available() -> bool:
-    """Indica se há GPU CUDA utilizável pelo CTranslate2."""
+    """Whether CTranslate2 can use a CUDA GPU."""
     try:
         import ctranslate2
 
         return ctranslate2.get_cuda_device_count() > 0
-    except Exception:  # noqa: BLE001 - qualquer falha significa "sem CUDA"
+    except Exception:  # noqa: BLE001 - any failure means "no CUDA"
         return False
 
 
 def resolve_device(device: str) -> tuple[str, str]:
-    """Resolve o dispositivo ("auto", "cpu", "cuda") e o compute_type adequado."""
+    """Resolve the device ("auto", "cpu", "cuda") and a suitable compute_type."""
     if device == "auto":
         device = "cuda" if cuda_available() else "cpu"
     compute_type = "float16" if device == "cuda" else "int8"
@@ -58,7 +58,7 @@ def resolve_device(device: str) -> tuple[str, str]:
 
 
 def load_model(model_name: str, device: str = "auto") -> WhisperModel:
-    """Carrega (e baixa, na primeira vez) o modelo Whisper."""
+    """Load the Whisper model (downloading it the first time)."""
     from faster_whisper import WhisperModel
 
     resolved, compute_type = resolve_device(device)
@@ -71,7 +71,7 @@ def transcribe(
     language: str | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> Transcription:
-    """Transcreve um arquivo de áudio/vídeo, reportando o progresso em segundos."""
+    """Transcribe an audio/video file, reporting progress in seconds of audio."""
     raw_segments, info = model.transcribe(str(audio_path), language=language, vad_filter=True)
     result = Transcription(
         language=info.language,

@@ -1,6 +1,6 @@
-"""Fluxo completo de uma entrada: obter áudio, transcrever e gravar as saídas.
+"""Full flow for one input: get the audio, transcribe it and (optionally) write outputs.
 
-Compartilhado pela CLI e pela interface gráfica; não depende de nenhuma das duas.
+Shared by the CLI and the desktop app; depends on neither.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class JobResult:
-    """Resultado de uma entrada processada com sucesso."""
+    """Result of a successfully processed input."""
 
     title: str
     transcription: transcriber.Transcription
@@ -28,24 +28,29 @@ class JobResult:
 
     @property
     def metadata(self) -> dict[str, str]:
-        """Metadados gravados no JSON de saída."""
-        return {"titulo": self.title, "origem": self.origin}
+        """Metadata written to the JSON output."""
+        return {"title": self.title, "source": self.origin}
 
 
 def resolve_source(
-    item: str, temp_dir: Path, download_hook: downloader.ProgressHook | None = None
+    item: str,
+    temp_dir: Path,
+    download_hook: downloader.ProgressHook | None = None,
+    extract_audio: bool = True,
 ) -> downloader.AudioSource:
-    """Obtém o áudio de uma entrada: arquivo local ou download via yt-dlp."""
+    """Get the audio for an input: a local file or a download via yt-dlp."""
     path = Path(item).expanduser()
     if path.is_file():
         return downloader.local_source(path)
     if not downloader.is_url(item):
-        raise ValueError(f"Não é um link válido nem um arquivo existente: {item}")
-    return downloader.download_audio(item, temp_dir, progress_hook=download_hook)
+        raise ValueError(f"Not a valid link or an existing file: {item}")
+    return downloader.download_audio(
+        item, temp_dir, progress_hook=download_hook, extract_audio=extract_audio
+    )
 
 
 def keep_audio(source: downloader.AudioSource, output_dir: Path) -> Path:
-    """Move o áudio temporário para a pasta de saída com um nome legível."""
+    """Move the temporary audio to the output folder with a readable name."""
     output_dir.mkdir(parents=True, exist_ok=True)
     target = output_dir / f"{formatters.sanitize_filename(source.title)}{source.path.suffix}"
     shutil.move(str(source.path), target)
@@ -60,17 +65,18 @@ def run_job(
     formats: list[str] | None = None,
     language: str | None = None,
     keep: bool = False,
+    extract_audio: bool = True,
     download_hook: downloader.ProgressHook | None = None,
     on_source: Any = None,
     on_progress: transcriber.ProgressCallback | None = None,
 ) -> JobResult:
-    """Baixa (se necessário) e transcreve uma entrada.
+    """Download (if needed) and transcribe one input.
 
-    Só grava arquivos quando `output_dir` e `formats` são informados; caso contrário,
-    nada é salvo em disco além do áudio temporário, que é apagado ao final.
+    Files are written only when `output_dir` and `formats` are given; otherwise nothing
+    is stored on disk except the temporary audio, which is deleted at the end.
     """
     with tempfile.TemporaryDirectory(prefix="video-transcriber-") as tmp:
-        source = resolve_source(item, Path(tmp), download_hook)
+        source = resolve_source(item, Path(tmp), download_hook, extract_audio)
         if on_source:
             on_source(source)
 
@@ -78,7 +84,7 @@ def run_job(
             model, source.path, language=language, on_progress=on_progress
         )
         if not result.segments:
-            logger.warning("Nenhuma fala detectada em %s", item)
+            logger.warning("No speech detected in %s", item)
 
         job = JobResult(title=source.title, transcription=result, origin=source.origin)
         if output_dir is not None and formats:

@@ -1,4 +1,5 @@
-# Saídas e mídia
+# Outputs and media
+transcriptions/
 transcricoes/
 downloads/
 *.mp3
@@ -9,7 +10,7 @@ downloads/
 *.opus
 *.aiff
 
-# Cookies de navegador (nunca versionar!)
+# Browser cookies (never commit!)
 cookies*.txt
 
 # Python
@@ -23,7 +24,8 @@ dist/
 .pytest_cache/
 .ruff_cache/
 
-# Sistema / editores
+# OS / editors
 .DS_Store
 .vscode/
 .idea/
+

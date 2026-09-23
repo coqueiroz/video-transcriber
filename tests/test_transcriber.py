@@ -1,4 +1,4 @@
-"""Testes do transcriber com modelo falso."""
+"""Transcriber tests with a fake model."""
 
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ def test_transcribe(fake_model) -> None:
     assert fake_model.calls[0]["language"] == "pt"
     assert result.language == "pt"
     assert result.duration == 2.0
-    assert [s.text for s in result.segments] == [" Olá.", " Tudo bem?"]
-    assert result.text == "Olá. Tudo bem?"
+    assert [s.text for s in result.segments] == [" Hello.", " How are you?"]
+    assert result.text == "Hello. How are you?"
     assert progress[-1] == (2.0, 2.0)
 
 
