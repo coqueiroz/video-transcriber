@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "video-transcriber"
+dynamic = ["version"]
+description = "Baixa o áudio de vídeos (YouTube, TikTok, Instagram...) e gera transcrições com faster-whisper."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Lucas Coqueiro" }]
+requires-python = ">=3.10"
+keywords = ["whisper", "transcription", "yt-dlp", "subtitles", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: Console",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "yt-dlp>=2024.8.6",
+    "faster-whisper>=1.0.3",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+transcrever = "video_transcriber.cli:app"
+
+[project.urls]
+Repository = "https://github.com/coqueiroz/video-transcriber"
+
+[tool.hatch.version]
+path = "src/video_transcriber/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/video_transcriber"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "BLE"]
+
+[tool.ruff.lint.per-file-ignores]
+# Typer exige chamadas em valores padrão dos parâmetros.
+"src/video_transcriber/cli.py" = ["B008"]

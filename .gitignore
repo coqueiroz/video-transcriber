@@ -1,0 +1,29 @@
+# Saídas e mídia
+transcricoes/
+downloads/
+*.mp3
+*.m4a
+*.wav
+*.mp4
+*.webm
+*.opus
+*.aiff
+
+# Cookies de navegador (nunca versionar!)
+cookies*.txt
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Sistema / editores
+.DS_Store
+.vscode/
+.idea/

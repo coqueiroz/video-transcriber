@@ -1,0 +1,8 @@
+yt-dlp>=2024.8.6
+faster-whisper>=1.0.3
+typer>=0.12
+rich>=13.7
+
+# desenvolvimento
+pytest>=8
+ruff>=0.6
