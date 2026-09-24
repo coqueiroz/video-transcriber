@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 import typer
 from typer.testing import CliRunner
@@ -9,6 +11,12 @@ from typer.testing import CliRunner
 from video_transcriber import cli, downloader, transcriber
 
 runner = CliRunner()
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def plain(result) -> str:
+    """CLI output without color codes (CI terminals force colors on)."""
+    return ANSI.sub("", result.output)
 
 
 @pytest.fixture(autouse=True)
@@ -86,7 +94,7 @@ def test_missing_ffmpeg_warns_and_skips_conversion(monkeypatch, tmp_path, downlo
     result = runner.invoke(cli.app, ["https://ok/1", "-o", str(out), "--keep-audio"])
 
     assert result.exit_code == 0, result.output
-    assert "ffmpeg not found" in result.output
+    assert "ffmpeg not found" in plain(result)
     assert download_calls[0]["extract_audio"] is False
     assert sorted(p.name for p in out.iterdir()) == ["Title 1.m4a", "Title 1.txt"]
 
@@ -100,7 +108,7 @@ def test_local_file_skips_download(monkeypatch, tmp_path, mock_model) -> None:
     result = runner.invoke(cli.app, [str(audio), "--output", str(out), "--format", "all"])
 
     assert result.exit_code == 0, result.output
-    assert "ffmpeg not found" not in result.output
+    assert "ffmpeg not found" not in plain(result)
     assert sorted(p.name for p in out.iterdir()) == [
         "gravação.json",
         "gravação.srt",
@@ -121,9 +129,9 @@ def test_links_file_continues_after_failure(tmp_path, download_calls, mock_model
 
     assert result.exit_code == 1
     assert sorted(p.name for p in out.iterdir()) == ["Title 1.srt", "Title 3.srt"]
-    assert "2 succeeded" in result.output
-    assert "1 failed" in result.output
-    assert "[private]" in result.output
+    assert "2 succeeded" in plain(result)
+    assert "1 failed" in plain(result)
+    assert "[private]" in plain(result)
     assert all(call["language"] == "pt" for call in mock_model.calls)
 
 
@@ -169,20 +177,20 @@ def test_temp_audio_removed_by_default(tmp_path, download_calls) -> None:
 def test_invalid_input_is_reported(tmp_path) -> None:
     result = runner.invoke(cli.app, ["does_not_exist.mp4", "-o", str(tmp_path)])
     assert result.exit_code == 1
-    assert "1 failed" in result.output
+    assert "1 failed" in plain(result)
 
 
 def test_warns_when_no_speech(tmp_path, download_calls, mock_model) -> None:
     mock_model.texts = []
     result = runner.invoke(cli.app, ["https://ok/1", "-o", str(tmp_path / "out")])
     assert result.exit_code == 0, result.output
-    assert "No speech detected" in result.output
+    assert "No speech detected" in plain(result)
 
 
 def test_version() -> None:
     result = runner.invoke(cli.app, ["--version"])
     assert result.exit_code == 0
-    assert "video-transcriber" in result.output
+    assert "video-transcriber" in plain(result)
 
 
 def test_range_options(tmp_path, download_calls, mock_model, monkeypatch) -> None:
@@ -201,7 +209,7 @@ def test_range_options(tmp_path, download_calls, mock_model, monkeypatch) -> Non
     )
 
     assert result.exit_code == 0, result.output
-    assert "Transcribing only 0:02–0:05" in result.output
+    assert "Transcribing only 0:02–0:05" in plain(result)
     assert [p.name for p in out.iterdir()] == ["lecture (0-02 to 0-05).srt"]
     assert (
         (out / "lecture (0-02 to 0-05).srt").read_text().splitlines()[1].startswith("00:00:02,000")
@@ -228,7 +236,7 @@ def test_range_portuguese_aliases(tmp_path, download_calls) -> None:
 )
 def test_range_errors(args, message, mock_model) -> None:
     result = runner.invoke(cli.app, ["https://ok/1", *args])
-    flat = " ".join(result.output.replace("│", " ").split())  # undo the error box wrapping
+    flat = " ".join(plain(result).replace("│", " ").split())  # undo the error box wrapping
     assert result.exit_code == 2
     assert message in flat
     assert mock_model.calls == []
