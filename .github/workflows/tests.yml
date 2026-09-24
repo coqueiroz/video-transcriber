@@ -2,6 +2,7 @@ name: tests
 
 on:
   push:
+    branches: ["**"]  # tags are checked by build-windows.yml (build + self-test)
   pull_request:
 
 jobs:
