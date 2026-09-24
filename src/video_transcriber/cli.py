@@ -22,6 +22,7 @@ from rich.progress import (
 from rich.table import Table
 
 from video_transcriber import __version__, downloader, formatters, pipeline, transcriber
+from video_transcriber.timecodes import TimecodeError, TimeRange, parse_timecode
 
 logger = logging.getLogger("video_transcriber")
 console = Console()
@@ -100,6 +101,16 @@ def parse_format(value: str) -> str:
     return value
 
 
+def parse_time_option(value: str | None) -> float | None:
+    """Validate --start/--end ("1:34:50", "94:50" or seconds)."""
+    if value is None or not value.strip():
+        return None
+    try:
+        return parse_timecode(value)
+    except TimecodeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 def expand_formats(fmt: str) -> list[str]:
     """Turn the --format value into a list of extensions."""
     return list(formatters.FORMATTERS) if fmt == "all" else [fmt]
@@ -134,6 +145,7 @@ def process_item(
     language: str | None,
     keep: bool,
     extract_audio: bool = True,
+    time_range: TimeRange | None = None,
 ) -> ItemResult:
     """Process one input while showing rich progress bars."""
     with make_progress() as progress:
@@ -163,6 +175,7 @@ def process_item(
             language=language,
             keep=keep,
             extract_audio=extract_audio,
+            time_range=time_range,
             download_hook=download_hook,
             on_source=on_source,
             on_progress=lambda done, total: progress.update(
@@ -249,6 +262,26 @@ def main(
             "--keep-audio", "--manter-audio", help="Keep the downloaded audio in the output folder."
         ),
     ] = False,
+    start: Annotated[
+        str | None,
+        typer.Option(
+            "--start",
+            "--inicio",
+            help="Transcribe from this time (HH:MM:SS, MM:SS or seconds). Default: beginning.",
+            callback=parse_time_option,
+            show_default=False,
+        ),
+    ] = None,
+    end: Annotated[
+        str | None,
+        typer.Option(
+            "--end",
+            "--fim",
+            help="Transcribe up to this time (HH:MM:SS, MM:SS or seconds). Default: the end.",
+            callback=parse_time_option,
+            show_default=False,
+        ),
+    ] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Show detailed logs.")] = False,
     version: Annotated[
         bool | None,
@@ -263,6 +296,15 @@ def main(
     if not items:
         logger.error("No input given. Pass links, files, or use --file links.txt.")
         raise typer.Exit(code=2)
+
+    time_range = TimeRange(start=float(start or 0), end=float(end) if end is not None else None)
+    try:
+        time_range.validate()
+    except TimecodeError as exc:
+        logger.error("%s", exc)
+        raise typer.Exit(code=2) from exc
+    if not time_range.is_full:
+        console.print(f"Transcribing only [bold]{time_range.label()}[/bold] of each input.")
 
     extract_audio = downloader.ffmpeg_available()
     if not extract_audio and any(downloader.is_url(i) for i in items):
@@ -288,6 +330,7 @@ def main(
                 language=lang,
                 keep=keep_audio,
                 extract_audio=extract_audio,
+                time_range=time_range,
             )
         except Exception as exc:  # noqa: BLE001 - one failure must not stop the batch
             logger.error("Failed on %s: %s", item, exc)

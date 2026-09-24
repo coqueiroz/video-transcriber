@@ -24,8 +24,8 @@ def download_calls(monkeypatch) -> list[dict]:
     """Mock yt-dlp: links containing "fail" raise, the others create a fake audio file."""
     calls: list[dict] = []
 
-    def fake_download(url, dest_dir, progress_hook=None, extract_audio=True):
-        calls.append({"url": url, "extract_audio": extract_audio})
+    def fake_download(url, dest_dir, progress_hook=None, extract_audio=True, section=None):
+        calls.append({"url": url, "extract_audio": extract_audio, "section": section})
         if "fail" in url:
             raise downloader.DownloadError("video unavailable [private]")
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -34,7 +34,10 @@ def download_calls(monkeypatch) -> list[dict]:
         if progress_hook:
             progress_hook({"status": "downloading", "downloaded_bytes": 1, "total_bytes": 1})
             progress_hook({"status": "finished"})
-        return downloader.AudioSource(path, f"Title {url[-1]}", url, is_temporary=True)
+        offset = section.start if section is not None else 0.0  # as if only the part came down
+        return downloader.AudioSource(
+            path, f"Title {url[-1]}", url, is_temporary=True, time_offset=offset
+        )
 
     monkeypatch.setattr(downloader, "download_audio", fake_download)
     return calls
@@ -180,3 +183,52 @@ def test_version() -> None:
     result = runner.invoke(cli.app, ["--version"])
     assert result.exit_code == 0
     assert "video-transcriber" in result.output
+
+
+def test_range_options(tmp_path, download_calls, mock_model, monkeypatch) -> None:
+    import wave
+
+    audio = tmp_path / "lecture.wav"
+    with wave.open(str(audio), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 16000 * 10)
+    out = tmp_path / "out"
+
+    result = runner.invoke(
+        cli.app, [str(audio), "--start", "0:02", "--end", "5", "-o", str(out), "-f", "srt"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Transcribing only 0:02–0:05" in result.output
+    assert [p.name for p in out.iterdir()] == ["lecture (0-02 to 0-05).srt"]
+    assert (
+        (out / "lecture (0-02 to 0-05).srt").read_text().splitlines()[1].startswith("00:00:02,000")
+    )
+
+
+def test_range_portuguese_aliases(tmp_path, download_calls) -> None:
+    result = runner.invoke(
+        cli.app, ["https://ok/1", "--inicio", "1:00", "--fim", "2:00", "-o", str(tmp_path)]
+    )
+    assert result.exit_code == 0, result.output
+    assert download_calls[0]["section"].start == 60
+    assert download_calls[0]["section"].end == 120
+    assert [p.name for p in tmp_path.iterdir()] == ["Title 1 (1-00 to 2-00).txt"]
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--start", "1:75"], "up to 59"),
+        (["--end", "1.30"], "Can't read"),
+        (["--start", "5:00", "--end", "4:00"], '"To" must be after "From"'),
+    ],
+)
+def test_range_errors(args, message, mock_model) -> None:
+    result = runner.invoke(cli.app, ["https://ok/1", *args])
+    flat = " ".join(result.output.replace("│", " ").split())  # undo the error box wrapping
+    assert result.exit_code == 2
+    assert message in flat
+    assert mock_model.calls == []

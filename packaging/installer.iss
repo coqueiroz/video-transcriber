@@ -1,5 +1,5 @@
 ; Inno Setup script for the Windows installer (per-user, no admin rights needed).
-; Build: iscc /DAppVersion=0.3.0 packaging\installer.iss   (after running PyInstaller)
+; Build: iscc /DAppVersion=0.4.0 packaging\installer.iss   (after running PyInstaller)
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"

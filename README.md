@@ -19,6 +19,7 @@ Paste a YouTube, TikTok or Instagram link (or [any site supported by yt-dlp](htt
 - **Desktop app**: paste a link, watch the progress bar, read the transcript right in the window
 - Plain text or **with timestamps**; copy it with one click or save it as `.txt`, `.srt` or `.json`
 - Works with links **and** local video/audio files
+- **Transcribe only part of a long video** (e.g. from 1:34:50 to 1:40:00) — much faster than the whole thing
 - Automatic language detection (or pick one), several quality levels
 - **Private by design**: everything runs on your computer, and the app saves nothing unless you ask
 - **CLI** for batches: many links at once or a `.txt` file with one link per line; a failing link doesn't stop the others
@@ -64,6 +65,15 @@ This creates `~/Applications/Video Transcriber.app`. The app uses the project's 
 
 You can also click *or choose a file from your computer* to transcribe a local video or audio file.
 
+### Only part of a video
+
+Long lectures or podcasts? Under **What to transcribe**, pick **Only a part** and fill in the **From** and **To** boxes — the colons are already there, so you only type numbers: 1 hour, 34 minutes and 50 seconds is `01 : 34 : 50`. Leave **To** empty to go until the end.
+
+- As soon as you paste a link, the app shows the video's length, and it tells you right away if a time is impossible (minutes above 59, *To* before *From*, or past the end of the video).
+- A YouTube link with a time in it (`&t=3750`, `?t=1h2m30s`) fills in **From** for you.
+- Only the chosen part is transcribed, and its timestamps (and the `.srt` subtitles) still match the original video.
+- When ffmpeg is installed only that part is downloaded; otherwise the audio is downloaded and the part is cut out locally.
+
 ## Command line
 
 The CLI writes the results to files (default folder: `./transcriptions`).
@@ -84,6 +94,9 @@ video-transcriber ~/Videos/lecture.mp4
 # Portuguese .srt subtitles with a more accurate model
 video-transcriber "https://youtu.be/VIDEO_ID" --language pt --format srt --model medium
 
+# Only a part of a long video: from 1:34:50 to 1:40:00 (or --start alone to go until the end)
+video-transcriber "https://youtu.be/VIDEO_ID" --start 1:34:50 --end 1:40:00
+
 # Every format, another folder, keeping the downloaded audio
 video-transcriber --file links.txt --format all --output my_transcripts --keep-audio
 ```
@@ -97,11 +110,13 @@ video-transcriber --file links.txt --format all --output my_transcripts --keep-a
 | `--output`, `-o` | `./transcriptions` | Folder where files are written |
 | `--device`, `-d` | `auto` | `cpu`, `cuda` or `auto` (uses an NVIDIA GPU if available) |
 | `--keep-audio` | off | Keep the downloaded audio in the output folder |
+| `--start` | beginning | Transcribe from this time: `HH:MM:SS`, `MM:SS` or seconds |
+| `--end` | end of video | Transcribe up to this time (same formats) |
 | `--verbose`, `-v` | off | Detailed logs (useful when something fails) |
 
-The command exits with code `1` if any input fails, which makes it script-friendly. The original Portuguese names (`transcrever`, `--arquivo`, `--idioma`, `--formato`, `--saida`, `--manter-audio`…) still work as aliases.
+The command exits with code `1` if any input fails, which makes it script-friendly. The original Portuguese names (`transcrever`, `--arquivo`, `--idioma`, `--formato`, `--saida`, `--manter-audio`, `--inicio`, `--fim`…) still work as aliases. Partial transcripts get the range in their filename, e.g. `Talk (1-34-50 to 1-40-00).srt`.
 
-**ffmpeg is optional.** Without it, downloads keep their original audio format (m4a/webm/mp4), which transcribes just fine. Install it if you want downloads converted to mp3 (handy with `--keep-audio`): `winget install Gyan.FFmpeg` (Windows), `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Linux).
+**ffmpeg is optional.** Without it, downloads keep their original audio format (m4a/webm/mp4), which transcribes just fine. Install it if you want downloads converted to mp3 (handy with `--keep-audio`) and, with `--start`/`--end`, to download only the chosen part: `winget install Gyan.FFmpeg` (Windows), `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Linux).
 
 ## Which model should I pick?
 
@@ -123,12 +138,12 @@ ruff check .
 pytest
 ```
 
-**The Windows app is built on GitHub Actions** ([`build-windows.yml`](.github/workflows/build-windows.yml)): pushing a tag like `v0.3.0` builds the executable with PyInstaller, creates the installer with Inno Setup, installs it and runs a real transcription as a self-test, then attaches both files to the GitHub release. It can also be started manually from the *Actions* tab. To build locally on Windows:
+**The Windows app is built on GitHub Actions** ([`build-windows.yml`](.github/workflows/build-windows.yml)): pushing a tag like `v0.4.0` builds the executable with PyInstaller, creates the installer with Inno Setup, installs it and runs a real transcription as a self-test, then attaches both files to the GitHub release. It can also be started manually from the *Actions* tab. To build locally on Windows:
 
 ```bash
 pip install ".[app,build]"
 pyinstaller packaging/video_transcriber.spec --noconfirm
-iscc /DAppVersion=0.3.0 packaging\installer.iss
+iscc /DAppVersion=0.4.0 packaging\installer.iss
 ```
 
 Project layout:
@@ -139,6 +154,7 @@ src/video_transcriber/
 ├── gui.py          # desktop app backend (pywebview)
 ├── web/            # the app's HTML/CSS/JS
 ├── pipeline.py     # shared flow: get audio → transcribe → (optionally) save
+├── timecodes.py    # reading/validating times like 1:34:50, partial ranges
 ├── downloader.py   # audio download with yt-dlp
 ├── transcriber.py  # speech-to-text with faster-whisper
 └── formatters.py   # txt/srt/json output and safe filenames

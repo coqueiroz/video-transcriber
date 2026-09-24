@@ -195,6 +195,34 @@
   }
   .ctx-menu button:hover:not(:disabled) { background: var(--accent); color: #fff; }
   .ctx-menu kbd { font: inherit; opacity: .55; }
+  .media-info { margin-top: 10px; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; min-height: 20px; overflow: hidden; }
+  .media-info span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .media-info b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .range-block { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .field-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .segmented { display: inline-flex; background: var(--input); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .segmented button { padding: 6px 14px; background: transparent; color: var(--muted); border-radius: 8px; font-size: 14px; }
+  .segmented button.active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 500; }
+  .range-fields { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 14px; }
+  .time-label { font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+  .time-box { display: inline-flex; align-items: center; gap: 4px; }
+  .time-box input {
+    width: 48px; height: 42px; text-align: center; padding: 0;
+    font: inherit; font-size: 18px; font-variant-numeric: tabular-nums;
+    color: var(--text); background: var(--input);
+    border: 1.5px solid var(--border); border-radius: 10px; outline: none;
+  }
+  .time-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .time-box input.invalid { border-color: var(--danger); }
+  .time-box .colon { font-size: 20px; color: var(--muted); font-weight: 600; }
+  .time-units { display: flex; gap: 4px; margin-top: 4px; }
+  .time-units span { width: 48px; text-align: center; font-size: 11px; color: var(--muted); }
+  .time-units span + span { margin-left: 10px; }
+  .range-hint { font-size: 13px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+  .range-hint code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); background: var(--input); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+  .range-msg { font-size: 13px; margin-top: 8px; display: flex; align-items: center; gap: 6px; min-height: 20px; }
+  .range-msg.ok { color: var(--ok); }
+  .range-msg.bad { color: var(--danger); }
   .hidden { display: none !important; }
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -235,6 +263,7 @@
       </div>
       <button id="go" class="primary" type="submit">Transcribe</button>
     </form>
+    <div id="media-info" class="media-info" aria-live="polite"></div>
 
     <div class="options">
       <button id="pick" class="link" type="button">
@@ -261,6 +290,45 @@
             <option value="large-v3">Best (very slow)</option>
           </select>
         </label>
+      </div>
+    </div>
+
+    <div class="range-block">
+      <div class="field-label">What to transcribe</div>
+      <div class="segmented" role="radiogroup" aria-label="What to transcribe">
+        <button id="mode-full" class="active" type="button" role="radio" aria-checked="true">Whole video</button>
+        <button id="mode-part" type="button" role="radio" aria-checked="false">Only a part</button>
+      </div>
+      <div id="range" class="hidden">
+        <div class="range-fields">
+          <div>
+            <div class="time-label">From</div>
+            <div class="time-box" data-group="from">
+              <input id="from-h" inputmode="numeric" maxlength="2" placeholder="00" aria-label="From, hours" autocomplete="off">
+              <span class="colon">:</span>
+              <input id="from-m" inputmode="numeric" maxlength="2" placeholder="00" aria-label="From, minutes" autocomplete="off">
+              <span class="colon">:</span>
+              <input id="from-s" inputmode="numeric" maxlength="2" placeholder="00" aria-label="From, seconds" autocomplete="off">
+            </div>
+            <div class="time-units"><span>hours</span><span>min</span><span>sec</span></div>
+          </div>
+          <div>
+            <div class="time-label">To</div>
+            <div class="time-box" data-group="to">
+              <input id="to-h" inputmode="numeric" maxlength="2" placeholder="00" aria-label="To, hours" autocomplete="off">
+              <span class="colon">:</span>
+              <input id="to-m" inputmode="numeric" maxlength="2" placeholder="00" aria-label="To, minutes" autocomplete="off">
+              <span class="colon">:</span>
+              <input id="to-s" inputmode="numeric" maxlength="2" placeholder="00" aria-label="To, seconds" autocomplete="off">
+            </div>
+            <div class="time-units"><span>hours</span><span>min</span><span>sec</span></div>
+          </div>
+        </div>
+        <p class="range-hint">
+          Example: 1 hour, 34 minutes and 50 seconds is <code>01 : 34 : 50</code>.
+          Minutes and seconds go from 00 to 59. Leave "To" empty to go until the end of the video.
+        </p>
+        <div id="range-msg" class="range-msg" aria-live="polite"></div>
       </div>
     </div>
 
@@ -363,6 +431,7 @@
     $("pick").disabled = busy;
     $("paste").disabled = busy;
     $("source").disabled = busy;
+    for (const el of document.querySelectorAll(".segmented button, .time-box input")) el.disabled = busy;
     $("go").textContent = busy ? "Transcribing..." : "Transcribe";
   }
 
@@ -374,7 +443,17 @@
   async function start(source) {
     if (!api) return;
     showError("");
-    const res = await api.start(source, $("language").value, $("model").value);
+    let from = null, to = null;
+    if (partMode) {
+      const check = validateRange();
+      if (!check.ok) {
+        if (check.text) { setRangeMsg("bad", check.text); markInvalid(FIELDS.slice(0, 3)); }
+        $("range-msg").scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      from = check.from; to = check.to;
+    }
+    const res = await api.start(source, $("language").value, $("model").value, from, to);
     if (!res.ok) { showError(res.error); return; }
     setBusy(true);
     show($("result"), false);
@@ -419,7 +498,8 @@
   function showResult(state) {
     current = state.result;
     const lang = LANGS[current.language] || current.language;
-    $("meta").textContent = `${current.title} · ${lang} · ${fmtTime(current.duration)}`;
+    const span = current.range ? `part ${current.range}` : fmtTime(current.duration);
+    $("meta").textContent = `${current.title} · ${lang} · ${span}`;
     renderTranscript();
     show($("result"), true);
     $("result").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -472,6 +552,10 @@
     show($("progress"), false);
     showError("");
     $("source").value = "";
+    for (const el of document.querySelectorAll(".time-box input")) el.value = "";
+    media = null;
+    renderMediaInfo();
+    validateRange();
     $("source").focus();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -479,7 +563,10 @@
   $("form").addEventListener("submit", (e) => { e.preventDefault(); start($("source").value); });
   $("pick").addEventListener("click", async () => {
     const path = await api.pick_file();
-    if (path) { $("source").value = path; start(path); }
+    if (!path) return;
+    $("source").value = path;
+    await probeNow();
+    if (partMode) focusFirstEmpty(); else start(path);
   });
   $("tab-text").addEventListener("click", () => setView("text"));
   $("tab-times").addEventListener("click", () => setView("times"));
@@ -534,6 +621,7 @@
     if (!text) { toast("The clipboard is empty"); return; }
     $("source").value = text.trim();
     $("source").focus();
+    probeNow();
   });
 
   const ctx = $("ctx");
@@ -574,7 +662,7 @@
 
     if (action === "paste" && isInput) {
       const text = await readClipboard();
-      if (text) insertIntoInput(target, text);
+      if (text) { insertIntoInput(target, text); if (target.id === "source") probeNow(); }
     } else if (action === "copy" || action === "cut") {
       const text = isInput
         ? target.value.slice(target.selectionStart, target.selectionEnd)
@@ -596,6 +684,150 @@
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideMenu(); });
   window.addEventListener("blur", hideMenu);
   window.addEventListener("scroll", hideMenu, true);
+
+  // --- Whole video / only a part ------------------------------------------------
+  let partMode = false;
+  let media = null;          // { title, duration, duration_label, start_hint } from api.probe
+  let probeTimer = null;
+  let probeSeq = 0;
+  const FIELDS = ["from-h", "from-m", "from-s", "to-h", "to-m", "to-s"];
+
+  function setMode(part) {
+    partMode = part;
+    $("mode-full").classList.toggle("active", !part);
+    $("mode-part").classList.toggle("active", part);
+    $("mode-full").setAttribute("aria-checked", String(!part));
+    $("mode-part").setAttribute("aria-checked", String(part));
+    show($("range"), part);
+    if (part) {
+      const empty = FIELDS.slice(0, 3).every((id) => !$(id).value);
+      if (empty && media && media.start_hint) setTime("from", media.start_hint);
+      validateRange();
+      focusFirstEmpty();
+    }
+  }
+
+  function focusFirstEmpty() {
+    const target = FIELDS.find((id) => !$(id).value) || "from-h";
+    $(target).focus();
+  }
+
+  function setTime(group, seconds) {
+    const s = Math.floor(seconds);
+    const parts = [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60];
+    ["h", "m", "s"].forEach((u, i) => { $(`${group}-${u}`).value = String(parts[i]).padStart(2, "0"); });
+  }
+
+  function readTime(group) {
+    const raw = ["h", "m", "s"].map((u) => $(`${group}-${u}`).value);
+    const empty = raw.every((v) => v === "");
+    const [h, m, s] = raw.map((v) => parseInt(v || "0", 10));
+    return { empty, h, m, s, seconds: h * 3600 + m * 60 + s };
+  }
+
+  function markInvalid(ids) { for (const id of ids) $(id).classList.add("invalid"); }
+
+  function setRangeMsg(kind, text) {
+    const box = $("range-msg");
+    box.className = "range-msg " + kind;
+    box.textContent = text ? (kind === "bad" ? "⚠ " : "✓ ") + text : "";
+  }
+
+  function describe(seconds) {
+    const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60;
+    return [h && `${h} h`, m && `${m} min`, s && `${s} s`].filter(Boolean).join(" ") || "0 s";
+  }
+
+  // Returns { ok, from, to } and shows a message under the fields.
+  function validateRange() {
+    for (const id of FIELDS) $(id).classList.remove("invalid");
+    const from = readTime("from"), to = readTime("to");
+    const duration = media && media.duration ? Math.floor(media.duration) : null;
+    const bad = (ids, text) => { markInvalid(ids); setRangeMsg("bad", text); return { ok: false }; };
+
+    for (const g of ["from", "to"]) {
+      const t = g === "from" ? from : to;
+      if (t.m > 59) return bad([`${g}-m`], "Minutes go from 00 to 59. Use the hours box for more.");
+      if (t.s > 59) return bad([`${g}-s`], "Seconds go from 00 to 59. Use the minutes box for more.");
+    }
+    if (from.empty && to.empty) {
+      setRangeMsg("", "");
+      return { ok: false, text: "Type where the part starts and ends." };
+    }
+    const fromIds = FIELDS.slice(0, 3), toIds = FIELDS.slice(3);
+    if (duration && from.seconds >= duration) {
+      return bad(fromIds, `"From" is after the end of the video (it's ${fmtTime(duration)} long).`);
+    }
+    if (!to.empty && to.seconds <= from.seconds) return bad(toIds, '"To" must be after "From".');
+    if (duration && !to.empty && to.seconds > duration + 1) {
+      return bad(toIds, `This video is only ${fmtTime(duration)} long.`);
+    }
+    const end = to.empty ? duration : to.seconds;
+    const endLabel = to.empty ? "the end" : fmtTime(to.seconds);
+    const length = end != null ? ` (${describe(end - from.seconds)})` : "";
+    setRangeMsg("ok", `Will transcribe from ${fmtTime(from.seconds)} to ${endLabel}${length}.`);
+    return { ok: true, from: from.seconds, to: to.empty ? null : to.seconds };
+  }
+
+  $("mode-full").addEventListener("click", () => setMode(false));
+  $("mode-part").addEventListener("click", () => setMode(true));
+
+  FIELDS.forEach((id, index) => {
+    const el = $(id);
+    el.addEventListener("input", () => {
+      el.value = el.value.replace(/\D/g, "").slice(0, 2);
+      if (el.value.length === 2 && index % 3 !== 2) $(FIELDS[index + 1]).focus();
+      validateRange();
+    });
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace" && !el.value && index % 3 !== 0) $(FIELDS[index - 1]).focus();
+      if (e.key === ":" || e.key === "ArrowRight" && el.selectionStart === el.value.length) {
+        if (index % 3 !== 2) { e.preventDefault(); $(FIELDS[index + 1]).focus(); }
+      }
+      if (e.key === "Enter") { e.preventDefault(); start($("source").value); }
+    });
+    el.addEventListener("blur", () => { if (el.value.length === 1) { el.value = "0" + el.value; validateRange(); } });
+  });
+
+  // --- Video length, looked up as soon as a link is pasted (option A) ------------
+  function renderMediaInfo(state) {
+    const box = $("media-info");
+    box.textContent = "";
+    if (state === "loading") {
+      box.textContent = "Checking the video…";
+      return;
+    }
+    if (!media) return;
+    const title = document.createElement("span");
+    title.textContent = media.title;
+    if (media.duration_label) {
+      const len = document.createElement("b");
+      len.textContent = media.duration_label;
+      box.append("⏱ ", len, " · ");
+    }
+    box.append(title);
+  }
+
+  async function probeNow() {
+    const source = $("source").value.trim();
+    const seq = ++probeSeq;
+    media = null;
+    if (!api || !source) { renderMediaInfo(); validateRange(); return; }
+    renderMediaInfo("loading");
+    const res = await api.probe(source);
+    if (seq !== probeSeq) return;  // a newer link was typed meanwhile
+    media = res.ok ? res : null;
+    renderMediaInfo();
+    if (partMode && media && media.start_hint && FIELDS.slice(0, 3).every((id) => !$(id).value)) {
+      setTime("from", media.start_hint);
+    }
+    if (partMode) validateRange();
+  }
+
+  $("source").addEventListener("input", () => {
+    clearTimeout(probeTimer);
+    probeTimer = setTimeout(probeNow, 600);
+  });
 
   window.addEventListener("pywebviewready", () => { api = window.pywebview.api; });
 </script>

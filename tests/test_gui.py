@@ -68,7 +68,7 @@ def test_start_rejects_unknown_model(api: gui.Api) -> None:
 def test_links_do_not_require_ffmpeg(api: gui.Api, monkeypatch) -> None:
     calls = []
 
-    def fake_download(url, dest_dir, progress_hook=None, extract_audio=True):
+    def fake_download(url, dest_dir, progress_hook=None, extract_audio=True, section=None):
         calls.append(extract_audio)
         path = dest_dir / "a.m4a"
         path.write_bytes(b"x")
@@ -98,7 +98,7 @@ def test_local_file_end_to_end_saves_nothing(
 
 
 def test_download_progress_and_errors(api: gui.Api, monkeypatch) -> None:
-    def failing_download(url, dest_dir, progress_hook=None, extract_audio=True):
+    def failing_download(url, dest_dir, progress_hook=None, extract_audio=True, section=None):
         progress_hook({"status": "downloading", "downloaded_bytes": 50, "total_bytes": 100})
         assert 5 < api.status()["percent"] < 40
         raise downloader.DownloadError("Private video")
@@ -221,3 +221,59 @@ def test_save_cancelled(api: gui.Api, tmp_path: Path) -> None:
 def test_save_rejects_unknown_format(api: gui.Api, tmp_path: Path) -> None:
     transcribe_local(api, tmp_path)
     assert api.save("docx")["ok"] is False
+
+
+def test_probe_returns_duration_and_start_hint(api: gui.Api, monkeypatch) -> None:
+    monkeypatch.setattr(downloader, "probe", lambda s: downloader.MediaInfo("Talk", 7985.0))
+    res = api.probe("https://www.youtube.com/watch?v=abc&t=3750")
+    assert res == {
+        "ok": True,
+        "title": "Talk",
+        "duration": 7985.0,
+        "duration_label": "2:13:05",
+        "start_hint": 3750.0,
+    }
+
+
+def test_probe_failure_is_quiet(api: gui.Api, monkeypatch) -> None:
+    def boom(source):
+        raise downloader.DownloadError("Video unavailable")
+
+    monkeypatch.setattr(downloader, "probe", boom)
+    assert api.probe("https://youtu.be/x") == {"ok": False, "error": "This video is not available."}
+    assert api.probe("not a link") == {"ok": False}
+
+
+def test_start_checks_range_against_known_duration(api: gui.Api, monkeypatch) -> None:
+    monkeypatch.setattr(downloader, "probe", lambda s: downloader.MediaInfo("Talk", 600.0))
+    api.probe("https://youtu.be/x")
+
+    res = api.start("https://youtu.be/x", start=0, end=900)
+    assert res == {"ok": False, "error": "This video is only 10:00 long."}
+    res = api.start("https://youtu.be/x", start=300, end=200)
+    assert res == {"ok": False, "error": '"To" must be after "From".'}
+    assert api.status()["status"] == "idle"
+
+
+def test_range_transcription_and_save_name(api: gui.Api, monkeypatch, tmp_path) -> None:
+    seen = {}
+
+    def fake_download(url, dest_dir, progress_hook=None, extract_audio=True, section=None):
+        seen["section"] = section
+        path = dest_dir / "part.m4a"
+        path.write_bytes(b"x")
+        return downloader.AudioSource(path, "Talk", url, True, time_offset=section.start)
+
+    monkeypatch.setattr(downloader, "download_audio", fake_download)
+    assert api.start("https://youtu.be/x", start=5690, end=6000)["ok"] is True
+    state = wait_until_finished(api)
+
+    assert state["status"] == "done", state["error"]
+    assert state["result"]["range"] == "1:34:50–1:40:00"
+    assert state["result"]["segments"][0]["start"] == 5690.0
+    assert seen["section"].start == 5690
+
+    window = FakeWindow(str(tmp_path / "x.txt"))
+    api._window = window
+    api.save("txt")
+    assert window.dialogs[0]["save_filename"] == "Talk (1-34-50 to 1-40-00).txt"

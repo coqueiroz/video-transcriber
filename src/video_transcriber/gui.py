@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from video_transcriber import __version__, downloader, formatters, pipeline, transcriber
+from video_transcriber.timecodes import TimecodeError, TimeRange, format_timecode, start_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ def transcription_payload(job: pipeline.JobResult) -> dict[str, Any]:
         "title": job.title,
         "language": t.language,
         "duration": t.duration,
+        "range": None if job.time_range.is_full else job.time_range.label(),
         "text": formatters.to_txt(t).strip(),
         "segments": [
             {"start": s.start, "end": s.end, "text": s.text.strip()}
@@ -121,6 +123,8 @@ def read_clipboard() -> str:
 
 def friendly_error(exc: BaseException) -> str:
     """Summarize an exception as a short message for the UI."""
+    if isinstance(exc, (TimecodeError, transcriber.EmptyRangeError)):
+        return str(exc)  # already written for people
     raw = str(exc).removeprefix("ERROR: ").strip() or type(exc).__name__
     for pattern, message in KNOWN_ERRORS.items():
         if pattern.lower() in raw.lower():
@@ -143,12 +147,42 @@ class Api:
         self._state = JobState()
         self._lock = threading.Lock()
         self._models: dict[str, Any] = {}
+        self._durations: dict[str, float | None] = {}
         self._window: Any = None
 
     # --- called from JavaScript ----------------------------------------------------
 
-    def start(self, source: str, language: str = "auto", model: str = "small") -> dict[str, Any]:
-        """Start a transcription in the background."""
+    def probe(self, source: str) -> dict[str, Any]:
+        """Look up a link's (or file's) title and duration before transcribing it."""
+        source = (source or "").strip()
+        if not source:
+            return {"ok": False}
+        is_local = Path(source).expanduser().is_file()
+        if not is_local and not downloader.is_url(source):
+            return {"ok": False}
+        try:
+            info = downloader.probe(source)
+        except Exception as exc:  # noqa: BLE001 - the transcription itself will report it
+            logger.info("Could not probe %s: %s", source, exc)
+            return {"ok": False, "error": friendly_error(exc)}
+        self._durations[source] = info.duration
+        return {
+            "ok": True,
+            "title": info.title,
+            "duration": info.duration,
+            "duration_label": format_timecode(info.duration) if info.duration else None,
+            "start_hint": None if is_local else start_from_url(source),
+        }
+
+    def start(
+        self,
+        source: str,
+        language: str = "auto",
+        model: str = "small",
+        start: float | None = None,
+        end: float | None = None,
+    ) -> dict[str, Any]:
+        """Start a transcription in the background (optionally only from `start` to `end`)."""
         source = (source or "").strip()
         if not source:
             return {"ok": False, "error": "Paste a link or choose a file."}
@@ -160,6 +194,11 @@ class Api:
                 "ok": False,
                 "error": "That doesn't look like a link (it should start with https://).",
             }
+        time_range = TimeRange(start=float(start or 0), end=None if end is None else float(end))
+        try:
+            time_range.validate(self._durations.get(source))
+        except TimecodeError as exc:
+            return {"ok": False, "error": str(exc)}
 
         with self._lock:
             if self._state.status == "running":
@@ -167,7 +206,9 @@ class Api:
             self._state = JobState(status="running", stage="Preparing...")
 
         lang = None if language in ("", "auto") else language
-        thread = threading.Thread(target=self._run, args=(source, lang, model), daemon=True)
+        thread = threading.Thread(
+            target=self._run, args=(source, lang, model, time_range), daemon=True
+        )
         thread.start()
         return {"ok": True}
 
@@ -193,7 +234,7 @@ class Api:
             return {"ok": False, "error": "There is no transcription to save."}
         if fmt not in formatters.FORMATTERS:
             return {"ok": False, "error": f"Invalid format: {fmt}"}
-        path = self._ask_save_path(f"{formatters.sanitize_filename(job.title)}.{fmt}", fmt)
+        path = self._ask_save_path(f"{formatters.sanitize_filename(job.output_name)}.{fmt}", fmt)
         if path is None:
             return {"ok": False, "cancelled": True}
         if path.suffix.lower() != f".{fmt}":
@@ -246,7 +287,7 @@ class Api:
             total = status.get("total_bytes") or status.get("total_bytes_estimate")
             fraction = min(1.0, status.get("downloaded_bytes", 0) / total) if total else 0.0
             percent = MODEL_END + fraction * (DOWNLOAD_END - MODEL_END)
-            self._update(stage="Downloading the video's audio...", percent=percent)
+            self._update(stage="Downloading the audio...", percent=percent)
         elif status.get("status") == "finished":
             self._update(stage="Processing the audio...", percent=DOWNLOAD_END)
 
@@ -258,7 +299,13 @@ class Api:
         fraction = min(1.0, done / total) if total else 1.0
         self._update(percent=start + fraction * (99.0 - start))
 
-    def _run(self, source: str, language: str | None, model_name: str) -> None:
+    def _run(
+        self,
+        source: str,
+        language: str | None,
+        model_name: str,
+        time_range: TimeRange | None = None,
+    ) -> None:
         try:
             if model_name not in self._models:
                 self._update(stage="Loading the model (downloaded the first time)...")
@@ -274,6 +321,7 @@ class Api:
                 language=language,
                 # faster-whisper decodes m4a/webm/mp4 by itself: no ffmpeg needed.
                 extract_audio=False,
+                time_range=time_range,
                 download_hook=self._download_hook,
                 on_source=self._on_source,
                 on_progress=lambda done, total: self._on_progress(done, total, start),
